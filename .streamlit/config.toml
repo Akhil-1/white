@@ -1,0 +1,17 @@
+# White. · light theme. Native widgets pick these up; app.py adds the finer styling.
+[theme]
+base = "light"
+primaryColor = "#14213D"
+backgroundColor = "#F7F7F5"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#111114"
+linkColor = "#14213D"
+borderColor = "#E8E7E3"
+font = "Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+headingFont = "Sora, Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+baseRadius = "0.75rem"
+buttonRadius = "0.75rem"
+showWidgetBorder = true
+
+[server]
+headless = true
