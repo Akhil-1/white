@@ -1,9 +1,53 @@
 # White. · your money, nothing hidden
 
-DPM 2026 · Group 9 · Phase 2 prototype (Streamlit + Gemini)
+DPM 2026 · IIM Visakhapatnam EMBA · Group 9 · Phase 2 interactive prototype (Streamlit + Gemini)
 
-> **Group: replace this section with your own product description** (problem, user, value).
-> The sections below are technical setup notes only.
+**Live app:** https://<your-app>.streamlit.app  ·  **Problem space:** simplifying how individuals track, manage and make better financial decisions
+
+## The product in one paragraph
+
+On salary day, a salaried professional saving for one goal (a car, a home deposit, a trip) has all the data and none of the decision. Bank apps show the past; investment apps sell the next product. White is a 10-minute salary-day check-in: it shows what is free this month, how far the goal is, what each saving mix does to the goal date, and what a one-off spend would change, **before** the money moves. Fixed rules do every calculation. Gemini only explains the trade-off in plain words, and the user can see exactly what is sent to it.
+
+| | |
+|---|---|
+| **User** | Salaried, 28–40, manages their own money, saving for a dated goal (persona: Meera, 32, Hyderabad) |
+| **Problem** | "Can I buy this and still be on time for my goal?" No app answers it this month, in rupees |
+| **One workflow** | Where I stand → Set a goal → Investment options → My plan + "What if…?" |
+| **One AI capability** | Explain the trade-off between options using only the calculated facts |
+| **Not in scope** | Bank linking, fund names, "best option" advice, login, a server database |
+
+## What the prototype does
+
+0. **Salary-day home.** What is free this month, and a card for every goal: % saved, where today's salary takes it, a small chart of your pace against the on-time line, the date at this pace and what is needed per month to be on time. **"I've put aside ₹18,000"** ticks the month off: the goal moves forward and the check-in is saved in this browser (with Undo). On a phone the three investment options swipe sideways instead of stacking.
+   - **"Thinking of buying something?"** on Home: type an amount, choose free money or goal money, and see the effect at once (free money left, or how many days or months later the goal lands), without the full check-in.
+   - Each goal card lists the **months put aside** so far, and has **Update today's value**: if the goal money is invested (a fund, RD or FD), type what it's worth today and White re-plans from it. Nothing is linked.
+   - **Payday runway:** the month from salary to salary as a chart: goal money out first, rent, EMIs, SIPs and bills on their due days, daily spending spread evenly. It shows what's left today, the biggest hit and what is truly spare per day.
+   - **Since last month:** chips flag what changed since the previous month's check-in, e.g. "Daily spending ↑ ₹3,000".
+1. **Where I stand.** Income, fixed monthly expenses (rent, EMIs, SIPs, bills), regular daily spending and savings. Shows what is free this month and how many months the emergency buffer covers.
+2. **Set a goal.** One or more goals, each with a cost, a target date and what is already saved. Shows the amount needed per month to be on time, and a pace chart. A goal tracker appears on the welcome screen.
+3. **Investment options.** A chart shows *when* each mix reaches the goal (expected date and likely range) against the target date. Three short questions (risk appetite, experience, flexibility). The time horizon comes from the goal date. Three mixes (Steady, Balanced, Growth) each show:
+   - when the goal is reached and how many months early or late that is;
+   - the value by the target date and the amount needed per month;
+   - the rupee fall in a bad year, and a risk index.
+4. **My plan.** It opens with a verdict, "This plan works" or "This plan doesn't work yet", and the reason in rupees and months. When it doesn't, up to four plans that do (keep the date, move the date, lower the cost, spend less or put aside all that's free) can each be applied with one click.
+   - **The plan:** where the goal money sits, and, if the plan misses the date, ways back on track (more per month, a one-off amount, a later date, a different mix).
+   - **"What if…?":** shows what a one-off spend does to the goal date and the buffer.
+   - **"Tune your plan":** update what the goal money is worth today, the monthly amount, the target or the mix; the plan and an On track / N months behind verdict update live.
+   - **"Remind me every salary day":** a calendar file (Google, Outlook, Apple) with a monthly reminder on the salary date.
+
+The app works without a Gemini key: every AI card falls back to a rule-based sentence.
+
+## See it work (simulation)
+
+At the bottom of My plan, "See it work" plays the next 6–36 salary days forward in three markets (Calm, Crash in year 1, Bumpy) for all three mixes on the same market path. A chart shows the gain or loss against the money put in, a table compares the end value, lowest point and goal date per mix, and dated check-in cards show what White would tell you at each one: on plan, below plan but on time, or behind with the one-off top-up that would get you back on plan. The mixes are 85/5/10 (Steady), 40/50/10 (Balanced) and 10/85/5 (Growth), as debt/equity/gold.
+
+## Ask White
+
+A chat button pinned to the bottom-right of every screen. It answers from the person's own numbers, e.g. "Can I afford a ₹15,000 phone?", "What if my salary is 5 days late?", "Am I behind on my goal?". It works without AI, with calculated answers; with a Gemini key it rephrases them. It never picks a product.
+
+## Input style
+
+Every amount has a slider and a number box that stay in sync: drag for speed, type for precision. The goal date has a "months from now" slider next to the calendar.
 
 ## Run it locally
 
@@ -15,30 +59,26 @@ cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # then paste your G
 streamlit run app.py
 ```
 
-The app also works without a key: AI explanations are replaced by calculation-only text.
-
 ## Deploy on Streamlit Community Cloud
 
-1. Push this folder to a **public GitHub repo** (`.streamlit/secrets.toml` is git-ignored, so your key is not uploaded).
-2. Go to share.streamlit.io, sign in with GitHub, choose **Create app**, pick the repo, branch `main`, file `app.py`.
-3. In **Advanced settings → Secrets**, paste:
-   ```
-   GEMINI_API_KEY = "your-key"
-   ```
-4. Deploy. The public URL is the live link for the slides.
-5. If Gemini reports the model is not found, add `GEMINI_MODEL = "gemini-2.5-flash"` to the secrets (the app also tries this automatically once).
+1. Push this folder to a public GitHub repo. `.streamlit/secrets.toml` is git-ignored, so the key is never uploaded.
+2. On share.streamlit.io choose **Create app**, pick the repo, branch `main`, file `app.py`.
+3. In **Advanced settings → Secrets** paste `GEMINI_API_KEY = "your-key"`.
+4. Deploy. If Gemini says the model is not found, add `GEMINI_MODEL = "gemini-2.5-flash"` (the app also tries this once on its own).
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `app.py` | The whole app: styling, calculations, the 4-step flow and the Gemini call |
-| `requirements.txt` | Python packages Streamlit Cloud installs (pinned to major versions) |
+| `app.py` | The whole app: styling, rules, the five screens, the Gemini call and the plan Q&A |
+| `requirements.txt` | Packages Streamlit Cloud installs (pinned to major versions) |
 | `HOW_IT_WORKS.md` | Section-by-section notes for explaining the code in class |
-| `.streamlit/config.toml` | Light theme (colours, fonts, radius) that native widgets use |
+| `.streamlit/config.toml` | Light theme for native widgets |
 | `.streamlit/secrets.toml.example` | Template for the Gemini key |
 
-## Privacy
+## Privacy and limits
 
-No login, no database, no bank connection. Inputs live only in the browser session.
-Only summary numbers (shown in the app under "What's sent to the AI") are sent to Gemini.
+- No login, no bank connection, no server database. Inputs live in the browser session.
+- "Save this month's check-in" keeps a summary in that browser's local storage only; "Clear history" removes it.
+- Gemini receives only summary numbers and the user's question, never names, account numbers or transactions. Each AI card has a "What's sent to the AI" panel showing the exact data.
+- The returns are editable planning assumptions, not forecasts. FD and loan interest are not projected. White does not name funds or recommend a product; it is not SEBI-registered investment advice.
