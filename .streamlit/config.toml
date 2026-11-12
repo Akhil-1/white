@@ -2,16 +2,17 @@
 [theme]
 base = "light"
 primaryColor = "#14213D"
-backgroundColor = "#F7F7F5"
+backgroundColor = "#F2F4F8"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#111114"
 linkColor = "#14213D"
-borderColor = "#E8E7E3"
+borderColor = "#E3E7EE"
 font = "Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
 headingFont = "Sora, Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
 baseRadius = "0.75rem"
 buttonRadius = "0.75rem"
 showWidgetBorder = true
+baseFontSize = 17
 
 [server]
 headless = true
