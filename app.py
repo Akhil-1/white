@@ -56,8 +56,8 @@ html, body, .stApp, p, label, input, textarea, select, button { font-family: var
 .gcard svg.spark { width:100%; height:86px; display:block; margin-top:6px; }
 header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stElementToolbar"] { display: none; }
 h1, h2, h3, h4 { font-family: var(--display) !important; letter-spacing: -0.4px; color: var(--ink); font-weight: 600 !important; }
-h2 { font-size: 28px !important; margin: 4px 0 2px !important; padding: 0 !important; }
-.lede { color: var(--ink-2); font-size:16.5px; margin: 0 0 18px; }
+h2 { font-size: 28px !important; margin: 0 0 2px !important; padding: 0 !important; }
+.lede { color: var(--ink-2); font-size:16.5px; margin: 0 0 12px; }
 p, li { color: var(--ink); }
 
 /* ── top bar: logo, step progress, AI toggle ───────────────────────── */
@@ -167,7 +167,7 @@ div[data-testid="stHorizontalBlock"]:has(.topbar) > div[data-testid="stColumn"]:
 .ai-text { color: var(--ink); font-size:17px; line-height:1.6; margin:0; }
 .ai-src { font-size:13.5px; color: var(--ink-3); margin-top:12px; }
 
-.hero-title { font-size:56px; line-height:1.02; margin:8px 0 18px; letter-spacing:-2px; font-weight:600 !important; }
+.hero-title { font-size:50px; line-height:1.02; margin:6px 0 12px; letter-spacing:-2px; font-weight:600 !important; }
 .hero-title .dim { color: var(--ink-3); }
 .step-tile { background: var(--surface); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow: var(--shadow); }
 .step-tile b { font-family: var(--display); color: var(--accent); font-size:13.5px; font-weight:600; }
@@ -237,8 +237,8 @@ div[data-testid="stCaptionContainer"] p { color: var(--ink-3) !important; }
 @media (max-width: 760px) { :root { --pl: 16px; } }
 .st-key-masthead { background: linear-gradient(115deg, #14213D 0%, #1C2D55 60%, #22376A 100%);
   width: 100vw !important; max-width: 100vw !important; box-sizing: border-box;
-  margin: -3.2rem 0 26px calc(50% - 50vw) !important;
-  padding: calc(2.6rem - 8px) max(var(--pl), calc((100vw - var(--mw)) / 2 + var(--pl))) 8px !important;
+  margin: -3.2rem 0 6px calc(50% - 50vw) !important;
+  padding: 22px max(var(--pl), calc((100vw - var(--mw)) / 2 + var(--pl))) 8px !important;
   box-shadow: 0 6px 24px -14px rgba(20,33,61,.55); gap: 2px !important; }
 .st-key-masthead .logo .word { color: #FFFFFF !important; }
 .st-key-masthead .logo .word b { color: #8FB0FF !important; }
@@ -262,7 +262,7 @@ div[data-testid="stCaptionContainer"] p { color: var(--ink-3) !important; }
 .st-key-masthead .st-key-use_ai [data-testid="stTooltipIcon"] { display: none !important; }
 .st-key-addgoal { border: 1.5px dashed var(--line-2); border-radius: 16px; padding: 20px 20px 16px; background: rgba(255,255,255,.45); }
 .st-key-addgoal button { width: 100%; }
-.glance { display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+.glance { display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
 .glance .card.mini { padding: 14px 16px; margin: 0; }
 .glance .card.mini .num.md { font-size: 22px; margin: 4px 0 2px; }
 @media (max-width: 760px) { .glance { grid-template-columns: repeat(3, 1fr); gap: 8px; } .glance .card.mini { padding: 10px 10px; } .glance .card.mini .num.md { font-size: 17px; } .glance .cap { font-size:12.5px; } }
@@ -292,7 +292,7 @@ div[data-testid="stCaptionContainer"] p { color: var(--ink-3) !important; }
 .verdict { border-radius: 16px; padding: 14px 18px; font-size: 16.5px; line-height: 1.5; margin: 2px 0 12px; }
 .verdict.ok { background: #E6F4EC; color: #14532D; border: 1px solid #BFE3CC; }
 .verdict.warn { background: #FDF0EC; color: #7A2E1A; border: 1px solid #F2CDBF; }
-.plan-opt { background:#fff; border:1px solid var(--line); border-radius: 16px; padding: 14px 16px; min-height: 172px; margin-bottom: 6px; }
+.plan-opt { background:#fff; border:1px solid var(--line); border-radius: 16px; padding: 14px 16px; min-height: 176px; margin-bottom: 6px; }
 .plan-opt.dim { opacity: .55; }
 .plan-opt .what { font-size: 15.5px; margin: 6px 0 2px; } .plan-opt .when { font-family: var(--display); font-size: 22px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
 @media (min-width: 1760px) { .block-container { max-width: 1560px !important; } :root { --mw: 1560px; } }
@@ -325,7 +325,11 @@ div[data-testid="stCaptionContainer"] p { color: var(--ink-3) !important; }
   .st-key-use_ai label p { font-size:13.5px !important; white-space:nowrap; }
   .st-key-use_ai [data-testid="stTooltipIcon"], .st-key-use_ai [data-testid="stTooltipHoverTarget"] { display:none; }
   .num.xl { font-size:40px; } .num.lg { font-size:26px; } .num.md { font-size:19px; }
-  .hero-title { font-size:38px; letter-spacing:-1.2px; }
+  .hero-title { font-size:32px; letter-spacing:-1px; margin:4px 0 10px; }
+  .glance { margin-bottom: 16px; }
+  [data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 6px; }
+  .simtable { overflow-x: auto; } .simrow { min-width: 560px; }
+  [data-testid^="stBaseButton"] p { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.2 !important; }
   .card { padding:18px; border-radius:18px; }
   .kpi { padding:14px; }
   .grid3 { gap:8px; }
@@ -1189,9 +1193,12 @@ def sim_section(choice_, s_):
                 rem = max(1, plan_n - m)
                 lump = max(0, cost - path(actual, mo, s_["exp_r"], rem)[-1]) / ((1 + s_["exp_r"] / 12) ** rem)
                 land_txt = fmt_month(add_months(TODAY, land)) if land else "not reached"
-                say = (f"{inr(planned - actual)} below plan after a market fall. At today's value it lands {land_txt}, "
-                       f"{drift} month{'s' if drift != 1 else ''} later than planned. Your {inr(mo)} now buys at lower prices; "
-                       f"add about {inr(lump)} once to stay on plan, or keep going and wait for the recovery.")
+                fell = moved < 0
+                say = (f"{inr(planned - actual)} below plan {'after a market fall' if fell else 'while the market recovers'}. "
+                       f"At today's value it lands {land_txt}, {drift} month{'s' if drift != 1 else ''} later than planned. "
+                       + (f"Your {inr(mo)} now buys at lower prices; " if fell else "")
+                       + f"{'add' if fell else 'Add'} about {inr(lump)} once to stay on plan, or keep going"
+                       + (" and wait for the recovery." if fell else "."))
                 tone = "warn"
             html_ += (f'<div class="ci {tone}"><div class="row"><b>Salary day, {fmt_month(add_months(TODAY, m))}</b>'
                       f'<span class="cap">month {m}</span></div>'
@@ -1281,9 +1288,9 @@ def title(text, lede):
 if S.step == 0:
     left, right = st.columns([1.1, 1], gap="large")
     with left:
-        st.markdown(f'<div class="cap" style="margin-top:18px;font-weight:600">{TODAY.strftime("%A, %d %B")}</div>'
+        st.markdown(f'<div class="cap" style="margin-top:0;font-weight:600">{TODAY.strftime("%A, %d %B")}</div>'
                     '<h1 class="hero-title">Salary\'s in.<br><span class="dim">Let\'s make it count.</span></h1>'
-                    '<p style="color:#55565E;font-size:16.5px;line-height:1.6;max-width:460px;margin-bottom:22px">A 10-minute check-in '
+                    '<p style="color:#55565E;font-size:16.5px;line-height:1.6;max-width:480px;margin-bottom:14px">A 10-minute check-in '
                     'that answers <b style="color:#111114">"Am I on track for my goal, and what should I do with this '
                     'month\'s money?"</b> Then test a decision before you make it.</p>', unsafe_allow_html=True)
         if last:
@@ -1292,10 +1299,17 @@ if S.step == 0:
             b2.button("Start fresh", on_click=go, args=(1,), key="fresh")
         else:
             st.button("Start check-in", type="primary", on_click=go, args=(1,))
-        st.markdown(f'<div class="cap" style="margin-top:16px;display:flex;gap:8px;align-items:center">{icon(I_LOCK, "#8A8B92", 14)}'
-                    'No bank login · no SMS reading · nothing on our servers · you make every decision</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="cap" style="margin-top:10px;display:flex;gap:8px;align-items:center">{icon(I_LOCK, "#8A8B92", 14)}'
+                    'No bank login · no SMS reading · nothing on our servers</div>', unsafe_allow_html=True)
+        # this month at a glance: three numbers people act on
+        days_left = max(1, (next_salary - TODAY).days)
+        glance = [("Everyday budget", f"{inr(daily_spend)}<span class='u'>/day</span>", f"till {next_salary.strftime('%d %b')}"),
+                  ("Emergency buffer", f"{buffer_months:.1f}<span class='u'> months</span>", "aim for 3–6"),
+                  ("Next salary", next_salary.strftime("%d %b"), f"in {days_left} days")]
+        st.markdown('<div class="glance">' + "".join(
+            f'<div class="card mini"><div class="k">{k}</div><div class="num md">{v}</div><div class="cap">{c}</div></div>'
+            for k, v, c in glance) + '</div>', unsafe_allow_html=True)
     with right:
-        st.markdown('<div style="height:34px"></div>', unsafe_allow_html=True)
         if last:
             rows = "".join(
                 f'<div class="hist"><span>{esc(h.get("month", ""))}</span><span>free <b>{inr(num(h, "free"))}</b></span>'
@@ -1313,14 +1327,6 @@ if S.step == 0:
                  f'<div class="legend"><span><i style="background:{SPLIT_HERO[0]}"></i>Fixed expenses <b>{inr(committed)}</b></span>'
                  f'<span><i style="background:{SPLIT_HERO[1]}"></i>Daily spending <b>{inr(S.usual)}</b></span>'
                  f'<span><i style="background:{SPLIT_HERO[2]}"></i>Free <b>{inr(free)}</b></span></div>', "card hero")
-        # this month at a glance: three numbers people act on
-        days_left = max(1, (next_salary - TODAY).days)
-        glance = [("Everyday budget", f"{inr(daily_spend)}<span class='u'>/day</span>", f"till {next_salary.strftime('%d %b')}"),
-                  ("Emergency buffer", f"{buffer_months:.1f}<span class='u'> months</span>", "aim for 3–6"),
-                  ("Next salary", next_salary.strftime("%d %b"), f"in {days_left} days")]
-        st.markdown('<div class="glance">' + "".join(
-            f'<div class="card mini"><div class="k">{k}</div><div class="num md">{v}</div><div class="cap">{c}</div></div>'
-            for k, v, c in glance) + '</div>', unsafe_allow_html=True)
         # the decision moment, without the full check-in: "can I afford this?"
         with st.container(key="quick"):
             st.markdown('<div class="k">Thinking of buying something?</div>'
@@ -1340,7 +1346,7 @@ if S.step == 0:
                     n_a, n_b = months_to_goal(sv0, m0, cost0, 0), months_to_goal(max(0, sv0 - amt), m0, cost0, 0)
                     shift = (n_b or 0) - (n_a or 0)
                     days = round(min(amt, sv0) / m0 * 30.4) if m0 else 0
-                    late_txt_ = (f"About {days} days later" if days < 45 else f"About {round(days / 30.4)} months later")
+                    late_txt_ = (f"About {days} days later" if days < 45 else f"About {round(days / 30.4)} month{'s' if round(days / 30.4) != 1 else ''} later")
                     verdict = ("ok", "No change to the goal date") if days == 0 else ("warn", late_txt_)
                     da = fmt_month(add_months(TODAY, n_a)) if n_a else "—"
                     db = fmt_month(add_months(TODAY, n_b)) if n_b else "—"
@@ -1415,7 +1421,7 @@ if S.step == 0:
             f'<div class="gline" style="margin-top:8px"><span>At this pace</span><b>{pace_d}</b></div>'
             f'<div class="gline"><span>To be on time</span><b>{inr(need)}/month</b></div>{since}</div>'
             , gi_, done, monthly))
-    st.markdown(f'<div class="row" style="margin:30px 0 4px;align-items:flex-end;flex-wrap:wrap;gap:4px 16px"><div><div class="k">Salary day · your goals</div>'
+    st.markdown(f'<div class="row" style="margin:10px 0 4px;align-items:flex-end;flex-wrap:wrap;gap:4px 16px"><div><div class="k">Salary day · your goals</div>'
                 f'<div class="cap">How close each goal is, and what this month\'s amount does. Rules only, no growth assumed.</div></div>'
                 f'<span class="cap">{len(S.goals) - behind_n} of {len(S.goals)} on time · {inr(total_goal_monthly)}/month in all</span></div>',
                 unsafe_allow_html=True)
@@ -1611,7 +1617,7 @@ elif S.step == 2:
              f'<div><div class="k">You put aside</div><div class="num md">{inr(S.goal_monthly)}</div><div class="cap">per month</div></div>'
              f'<div><div class="k">You reach it</div><div class="num md">{fmt_month(reach) if reach else "—"}</div>'
              f'<div class="cap {"warn" if delay and delay > 0 else "good"}" style="font-weight:700">'
-             f'{f"{delay} months late" if delay and delay > 0 else "on time"}</div></div></div>')
+             f'{(f"{delay} month" + ("s" if delay != 1 else "") + " late") if delay and delay > 0 else "on time"}</div></div></div>')
         with st.container(border=True):
             st.markdown('<div class="k" style="padding:6px 0 0">Your pace vs what\'s needed</div>'
                         '<div class="cap">Saving only, no growth. The next step adds investing.</div>', unsafe_allow_html=True)
@@ -1677,7 +1683,7 @@ elif S.step == 3:
                         f'from good to weak markets. Dashed line = your target ({fmt_month(S.goal_date)}).</div>',
                         unsafe_allow_html=True)
             range_chart(stats, S.goal_date, height=210)
-    st.markdown('<div class="cap mob-only" style="margin:4px 0 -6px">Swipe to compare the three mixes →</div>',
+    st.markdown('<div class="cap mob-only" style="margin:4px 0 10px">Swipe to compare the three mixes →</div>',
                 unsafe_allow_html=True)
     cols = st.columns(3)
     for col, n in zip(cols, MIXES):
@@ -1739,7 +1745,7 @@ elif S.step == 4:
     over = (S.goal_monthly or 0) > afford
     works = (late_m is not None and late_m <= 0) and not over
     def _ym(n):
-        return "never at this pace" if n is None else (f"{n // 12} yr {n % 12} mo" if n >= 12 else f"{n} months")
+        return "never at this pace" if n is None else (f"{n // 12} yr {n % 12} mo" if n >= 12 else (f"{n} month" if n == 1 else f"{n} months"))
     if works:
         head = (f'<b>This plan works.</b> {esc(S.goal_name)} lands around <b>{s["goal_date"]}</b>, on or before your '
                 f'{fmt_month(S.goal_date)} target, and you keep <b>{inr(free - total_goal_monthly)}</b> free this month.')
@@ -1761,9 +1767,9 @@ elif S.step == 4:
         n_max = months_to_goal(S.goal_saved, afford, S.goal_cost, r_) if afford > 0 else None
         d_fit = add_months(TODAY, n_fit) if n_fit else S.goal_date
         opts = [
-            ("Keep the date", f"Put aside <b>{inr(s['need_pm'])}</b>/month", f"{fmt_month(S.goal_date)}, on time",
+            ("Keep the date", f"Put aside <b>{inr(s['need_pm'])}</b>/month", fmt_month(S.goal_date),
              s["need_pm"] <= afford,
-             f"Needs {inr(s['need_pm'] - afford)} more than you have free" if s["need_pm"] > afford else "Fits your free money",
+             f"On time · needs {inr(s['need_pm'] - afford)} more than you have free" if s["need_pm"] > afford else "On time · fits your free money",
              [("goal_monthly", int(math.ceil(s["need_pm"] / 500) * 500))]),
             ("Move the date", f"<b>{inr(m_fit)}</b>/month" + (" (what fits)" if over else ""),
              fmt_month(d_fit) if n_fit else "not reachable", bool(n_fit) and m_fit > 0, "Same goal, later date",
