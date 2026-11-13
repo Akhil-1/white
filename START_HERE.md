@@ -14,7 +14,7 @@ You need: a GitHub account (free) and a Google account (for the Gemini key).
 3. Name it `white-app`, choose **Public**, tick **Add a README file**, then click **Create repository**.
 
 **2. Upload the app files**
-1. Unzip `white-app-v6.zip` on your computer.
+1. Unzip `white-app-final.zip` on your computer.
 2. In the repo, click **Add file → Upload files**.
 3. Open the unzipped folder, select **everything inside it**, and drag it onto the page:
    - `app.py`
@@ -60,7 +60,7 @@ You need: a GitHub account (free) and a Google account (for the Gemini key).
 - **Mac:** download Python 3.12 from python.org/downloads and install it.
 
 **2. Open a terminal in the app folder**
-1. Unzip `white-app-v6.zip`.
+1. Unzip `white-app-final.zip`.
 2. Open a terminal in that folder:
    - **Windows:** open the folder in File Explorer, click the address bar, type `cmd`, press Enter.
    - **Mac:** right-click the folder → **New Terminal at Folder**. If that's missing, open Terminal, type `cd ` and drag the folder in.

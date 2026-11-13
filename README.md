@@ -10,7 +10,7 @@ On salary day, a salaried professional saving for one goal (a car, a home deposi
 
 | | |
 |---|---|
-| **User** | Salaried, 28–40, manages their own money, saving for a dated goal (persona: Meera, 32, Hyderabad) |
+| **User** | Salaried, 23–35, manages their own money, saving for a dated goal (persona: Meera, 32, Hyderabad) |
 | **Problem** | "Can I buy this and still be on time for my goal?" No app answers it this month, in rupees |
 | **One workflow** | Where I stand → Set a goal → Investment options → My plan + "What if…?" |
 | **One AI capability** | Explain the trade-off between options using only the calculated facts |
@@ -25,12 +25,13 @@ On salary day, a salaried professional saving for one goal (a car, a home deposi
    - **Since last month:** chips flag what changed since the previous month's check-in, e.g. "Daily spending ↑ ₹3,000".
 1. **Where I stand.** Income, fixed monthly expenses (rent, EMIs, SIPs, bills), regular daily spending and savings. Shows what is free this month and how many months the emergency buffer covers.
 2. **Set a goal.** One or more goals, each with a cost, a target date and what is already saved. Shows the amount needed per month to be on time, and a pace chart. A goal tracker appears on the welcome screen.
-3. **Investment options.** A chart shows *when* each mix reaches the goal (expected date and likely range) against the target date. Three short questions (risk appetite, experience, flexibility). The time horizon comes from the goal date. Three mixes (Steady, Balanced, Growth) each show:
-   - when the goal is reached and how many months early or late that is;
-   - the value by the target date and the amount needed per month;
-   - the rupee fall in a bad year, and a risk index.
+3. **Investment options.** Your timeline comes first: the goal date decides what is sensible (under 3 years mostly debt, 3–5 years balanced, over 5 years equity can recover), so the mix that fits is marked **Best fit** and chosen by default. Three short questions set your stated comfort. A one-line trade-off shows how many months equity saves against what one bad year could cost. Three mixes (Steady 85/5/10, Balanced 40/50/10, Growth 10/85/5, as debt/equity/gold) each show:
+   - the expected goal date, and the date if markets are weak;
+   - the amount needed per month to be on time;
+   - the rupee fall in a bad year;
+   - whether it fits your timeline and your stated comfort.
 4. **My plan.** It opens with a verdict, "This plan works" or "This plan doesn't work yet", and the reason in rupees and months. When it doesn't, up to four plans that do (keep the date, move the date, lower the cost, spend less or put aside all that's free) can each be applied with one click.
-   - **The plan:** where the goal money sits, and, if the plan misses the date, ways back on track (more per month, a one-off amount, a later date, a different mix).
+   - **The plan:** the chosen mix and where the goal money sits (debt, equity, gold), kept apart from the emergency buffer.
    - **"What if…?":** shows what a one-off spend does to the goal date and the buffer.
    - **"Tune your plan":** update what the goal money is worth today, the monthly amount, the target or the mix; the plan and an On track / N months behind verdict update live.
    - **"Remind me every salary day":** a calendar file (Google, Outlook, Apple) with a monthly reminder on the salary date.

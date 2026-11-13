@@ -154,6 +154,8 @@ div[data-testid="stHorizontalBlock"]:has(.topbar) > div[data-testid="stColumn"]:
 .opt .name { font-family: var(--display); font-weight:600; font-size:17px; display:flex; align-items:center; gap:9px; }
 .opt .name i { width:10px; height:10px; border-radius:50%; display:inline-block; }
 .opt .foot { margin-top:12px; min-height:58px; }
+.tradeoff { font-size:16px; color: var(--ink); background:#fff; border:1px solid var(--line); border-left:4px solid var(--warn);
+  border-radius:12px; padding:12px 16px; margin:14px 0 12px; line-height:1.5; }
 
 /* what-if timeline */
 .tl { display:flex; align-items:center; gap:10px; margin:14px 0 6px; }
@@ -550,7 +552,7 @@ DEFAULTS = {
     "goal_type": "Car", "goal_name": "New car", "goal_cost": 800000,
     "goal_date": add_months(TODAY, 30), "goal_saved": 150000, "goal_monthly": 18000,
     "q_drop": "Wait it out", "q_exp": "Some experience", "q_early": "Maybe",
-    "r_debt": 7.0, "r_equity": 11.0, "r_gold": 8.0, "choice": "Balanced", "sim_scen": "Crash in year 1", "sim_months": 24, "tune_mix": None, "assist": [],
+    "r_debt": 7.0, "r_equity": 11.0, "r_gold": 8.0, "choice": None, "sim_scen": "Crash in year 1", "sim_months": 24, "tune_mix": None, "assist": [],
     "wi_kind": "One-off spend", "wi_amount": 15000, "wi_from": "This month's goal money", "wi_monthly": 3000,
     "use_ai": True, "goals": None, "gi": 0, "chat": [], "quick_amt": 0, "quick_src": "Free money",
 }
@@ -962,7 +964,16 @@ MIXES = {"Steady": (85, 5, 10), "Balanced": (40, 50, 10), "Growth": (10, 85, 5)}
 MIX_COMFORT = {"Steady": "Low", "Balanced": "Medium", "Growth": "High"}
 MIX_COLOR = {"Steady": "#3987e5", "Balanced": "#d95926", "Growth": "#199e70"}       # colour-blind checked on white
 WEAK_YEAR = (3.0, -20.0, -5.0)                                                     # bad-year returns %
-choice = S.choice if S.choice in MIXES else "Balanced"
+# time horizon decides what is sensible: under 3 years mostly debt, 3-5 years balanced, 5+ years equity can recover
+horizon_band = "short" if goal_months <= 36 else ("medium" if goal_months <= 60 else "long")
+HORIZON_FIT = {"short": {"Steady": "ok", "Balanced": "risky", "Growth": "no"},
+               "medium": {"Steady": "ok", "Balanced": "ok", "Growth": "risky"},
+               "long": {"Steady": "ok", "Balanced": "ok", "Growth": "ok"}}
+_ORDER = ["Low", "Medium", "High"]
+_by_time = {"short": "Steady", "medium": "Balanced", "long": "Growth"}[horizon_band]
+suggested = (_by_time if _ORDER.index(MIX_COMFORT[_by_time]) <= _ORDER.index(comfort)
+             else ("Steady" if comfort == "Low" else "Balanced"))
+choice = S.choice if S.choice in MIXES else suggested
 
 
 def mix_stats(name):
@@ -977,11 +988,15 @@ def mix_stats(name):
     return {
         "debt": d, "equity": e, "gold": g, "exp_r": exp_r, "months": n_exp, "n_low": n_low, "n_high": n_high,
         "goal_date": fmt_month(add_months(TODAY, n_exp)) if n_exp else "50+ years",
-        "range": (f"{fmt_month(add_months(TODAY, n_high))} – {fmt_month(add_months(TODAY, n_low))}"
+        "range": ((f"{fmt_month(add_months(TODAY, n_high))} – {fmt_month(add_months(TODAY, n_low))}"
+                   if n_low != n_high else f"{fmt_month(add_months(TODAY, n_low))}, steady")
                   if n_low and n_high else "—"),
         "dip": round((d * WEAK_YEAR[0] + e * WEAK_YEAR[1] + g * WEAK_YEAR[2]) / 100, 1),
         "fits": order.index(MIX_COMFORT[name]) <= order.index(comfort),
         "short_risk": goal_months <= 36 and e >= 50,
+        "fit": HORIZON_FIT[horizon_band][name],
+        "weak_date": fmt_month(add_months(TODAY, n_low)) if n_low else "50+ years",
+        "weak_late": (n_low - goal_months) if n_low else None,
         "need_pm": monthly_needed(S.goal_saved, S.goal_cost, exp_r, goal_months),   # to be on time with this mix
         "fv": path(S.goal_saved, S.goal_monthly, exp_r, goal_months)[-1],              # value on the target date
         "late": (n_exp - goal_months) if n_exp else None,                               # months late (+) / early (−)
@@ -1425,8 +1440,8 @@ if S.step == 0:
                 f'<div class="cap">How close each goal is, and what this month\'s amount does. Rules only, no growth assumed.</div></div>'
                 f'<span class="cap">{len(S.goals) - behind_n} of {len(S.goals)} on time · {inr(total_goal_monthly)}/month in all</span></div>',
                 unsafe_allow_html=True)
-    per_row = 3
     slots = cards + ([None] if len(cards) < 6 else [])          # last slot invites another goal
+    per_row = min(3, len(slots))                                  # one goal + "add" = two halves, full width
     for i in range(0, len(slots), per_row):
         cols = st.columns(per_row, gap="medium")
         for c, html in zip(cols, slots[i:i + per_row]):
@@ -1646,17 +1661,22 @@ elif S.step == 2:
 # 11. STEP 3: INVESTMENT OPTIONS (illustrative mixes; the user chooses)
 # ═════════════════════════════════════════════════════════════
 elif S.step == 3:
-    title("Investment options", f"Three illustrative mixes for {inr(S.goal_monthly)} a month, and what each would need "
-                                f"to reach {fmt_month(S.goal_date)} on time. You choose; nothing is recommended.")
-    st.markdown('<div class="note-inline">White never invests or moves money. You invest through your own bank or fund app; '
-                'this shows what each mix would do to your goal date, so you can choose before you do.</div>', unsafe_allow_html=True)
+    title("Investment options", f"Three illustrative mixes for {inr(S.goal_monthly)} a month. Your timeline matters most.")
+    H_NOTE = {"short": (f"<b>Your goal is {goal_months} months away: a short goal.</b> Money you need within 3 years usually sits "
+                        "mostly in debt (FD, RD, debt funds), because equity can fall just when you need it. Steady fits this timeline."),
+              "medium": (f"<b>Your goal is {goal_months} months away: a medium goal.</b> Between 3 and 5 years, a mix of debt and "
+                         "equity is common; a heavy equity share can still be down when you need it. Balanced fits this timeline."),
+              "long": (f"<b>Your goal is {goal_months} months away: a long goal.</b> Over 5 years, equity has time to recover "
+                       "from bad years, so Growth fits if you are comfortable with the swings.")}[horizon_band]
+    st.markdown(f'<div class="note-inline">{H_NOTE} <span class="cap">A common rule of thumb, not advice. White never invests '
+                f'or moves money; you invest through your own bank or fund app.</span></div>', unsafe_allow_html=True)
     stats = {n: mix_stats(n) for n in MIXES}
     left, right = st.columns([1.3, 1], gap="large")
     with left:
         with st.container(border=True):
-            st.markdown(f'<div class="k" style="padding:6px 0 2px">Three quick questions</div>'
-                        f'<div class="cap" style="margin-bottom:10px">Time to goal: <b>{goal_months} months</b>, taken from your goal'
-                        f'{", which is short (under 3 years)" if goal_months <= 36 else ""}.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="k" style="padding:6px 0 2px">Three quick questions</div>'
+                        '<div class="cap" style="margin-bottom:10px">About you. Your timeline comes from your goal date.</div>',
+                        unsafe_allow_html=True)
             QS = [("q_drop", "Risk appetite", "Your ₹1 lakh falls to ₹85,000 in a bad year. You would…",
                    ["Sell to stop losses", "Wait it out", "Invest more"]),
                   ("q_exp", "Experience", "How much have you invested before?", ["New to investing", "Some experience", "Experienced"]),
@@ -1667,8 +1687,7 @@ elif S.step == 3:
                             f'<div style="font-size:14px;font-weight:600;line-height:1.35">{qtext}</div>', unsafe_allow_html=True)
                 qb.pills(qtext, opts, key=qk, label_visibility="collapsed")
             st.markdown(f'<div class="hair" style="margin:10px 0"></div><div class="row"><span class="k">Stated comfort</span>'
-                        f'<span class="pill navy">{comfort}</span></div>'
-                        f'<div class="cap" style="margin-top:6px;padding-bottom:6px">Goal is {goal_months} months away</div>', unsafe_allow_html=True)
+                        f'<span class="pill navy">{comfort}</span></div><div style="height:6px"></div>', unsafe_allow_html=True)
         with st.expander("Assumptions (edit them)"):
             st.caption("Illustrative long-run yearly returns, not predictions. Bad year: debt +3%, equity −20%, "
                        "gold −5%. Ranges use equity at 4%–15%.")
@@ -1683,6 +1702,14 @@ elif S.step == 3:
                         f'from good to weak markets. Dashed line = your target ({fmt_month(S.goal_date)}).</div>',
                         unsafe_allow_html=True)
             range_chart(stats, S.goal_date, height=210)
+        st_, gr_ = stats["Steady"], stats["Growth"]
+        if st_["months"] and gr_["months"]:                     # the trade-off in one line: months gained vs rupees at risk
+            gain_ = st_["months"] - gr_["months"]
+            st.markdown(f'<div class="tradeoff"><b>The trade-off:</b> Growth gets you there '
+                        f'<b>{gain_} month{"s" if gain_ != 1 else ""} sooner</b> than Steady, but one bad year could knock '
+                        f'<b>{inr(gr_["drop_amt"])}</b> off your goal money (Steady: {inr(st_["drop_amt"])}).'
+                        + (' With a short goal, there may be no time to recover.' if horizon_band == "short" else '')
+                        + '</div>', unsafe_allow_html=True)
     st.markdown('<div class="cap mob-only" style="margin:4px 0 10px">Swipe to compare the three mixes →</div>',
                 unsafe_allow_html=True)
     cols = st.columns(3)
@@ -1690,42 +1717,44 @@ elif S.step == 3:
         s = stats[n]
         sel = n == choice
         with col:
+            fit_txt = {"ok": ("ok", "Fits your timeline"), "risky": ("warn", "Risky for this timeline"),
+                       "no": ("warn", "Not for a short goal")}[s["fit"]]
             st.markdown(
                 f'<div class="opt{" sel" if sel else ""}" style="border-top-color:{MIX_COLOR[n]}">'
-                f'<div class="name"><i style="background:{MIX_COLOR[n]}"></i>{n}</div>'
+                f'<div class="name"><i style="background:{MIX_COLOR[n]}"></i>{n}'
+                + ('<span class="pill navy" style="margin-left:auto;font-size:11px">Best fit</span>' if n == suggested else '') + '</div>'
                 + bar3(s["debt"], s["equity"], s["gold"], ALLOC, "14px 0 8px") +
                 f'<div class="cap">Debt {s["debt"]} · Equity {s["equity"]} · Gold {s["gold"]}</div>'
-                f'<div style="margin-top:10px"><div class="kv"><span>Goal reached</span><b>{s["goal_date"]}</b></div>'
-                f'<div class="kv"><span>Vs your target</span><b class="{"warn" if (s["late"] or 1) > 0 else "good"}">{late_txt(s["late"])}</b></div>'
-                f'<div class="kv"><span>Value by {fmt_month(S.goal_date)}</span><b>{short_inr(s["fv"])}</b></div>'
+                f'<div style="margin-top:10px"><div class="kv"><span>Expected</span><b>{s["goal_date"]} '
+                f'<span class="{"warn" if (s["late"] or 1) > 0 else "good"}" style="font-weight:600">· {late_txt(s["late"])}</span></b></div>'
+                f'<div class="kv"><span>If markets are weak</span><b class="{"warn" if (s["weak_late"] or 1) > 0 else "good"}">{s["weak_date"]}</b></div>'
                 f'<div class="kv"><span>To be on time</span><b>{inr(s["need_pm"])}/mo</b></div>'
-                f'<div class="kv"><span>Bad-year fall</span><b>−{inr(s["drop_amt"])}</b></div>'
-                f'<div class="kv"><span>Risk</span><b>{"●" * s["risk"]}{"○" * (5 - s["risk"])} {s["risk"]}/5</b></div></div>'
-                f'<div class="foot"><span class="pill {"ok" if s["fits"] else "warn"}">'
-                f'{"Fits comfort" if s["fits"] else "Above comfort"}</span>'
-                + ('<div class="cap warn" style="margin-top:10px;font-weight:600">Short timeline: could be down when you need it.</div>'
-                   if s["short_risk"] else '<div class="cap" style="margin-top:10px;visibility:hidden">Short timeline: could be down when you need it.</div>') + '</div></div>', unsafe_allow_html=True)
+                f'<div class="kv"><span>Bad-year fall</span><b>−{inr(s["drop_amt"])}</b></div></div>'
+                f'<div class="foot"><span class="pill {fit_txt[0]}">{fit_txt[1]}</span>'
+                f'<div class="cap" style="margin-top:8px">{"Within" if s["fits"] else "Above"} your stated comfort</div></div></div>',
+                unsafe_allow_html=True)
             st.button("Chosen ✓" if sel else f"Choose {n}", key=f"pick_{n}", width="stretch",
                       type="primary" if sel else "secondary", on_click=pick, args=(n,))
-    explain("Compare the three mixes for this goal in 3-4 sentences: reaching the goal sooner vs the size of a "
-            "bad-year dip vs the timeline. Mention the stated comfort. Do not pick one.",
+    explain("Compare the three mixes for this goal in 3 sentences. Start with the timeline: say which mix fits it by the "
+            "rule of thumb in timeline_fit, then contrast the expected date with the weak-market date. Mention the stated "
+            "comfort. Never name funds or products.",
             {"goal": S.goal_name, "target_date": fmt_month(S.goal_date), "months_left": goal_months,
-             "monthly_amount": inr(S.goal_monthly), "stated_comfort": comfort,
+             "monthly_amount": inr(S.goal_monthly), "stated_comfort": comfort, "timeline": horizon_band,
              "emergency_buffer_months": round(buffer_months, 1),
              "options": {n: {"mix": f"debt {s['debt']}%, equity {s['equity']}%, gold {s['gold']}%",
                              "goal_reached": s["goal_date"], "likely_range": s["range"], "weak_year_dip_pct": s["dip"],
                              "needed_per_month_to_be_on_time": inr(s["need_pm"]),
-                             "fits_comfort": s["fits"], "short_timeline_risk": s["short_risk"]} for n, s in stats.items()}},
-            f"Steady is the smoothest ride (about {stats['Steady']['dip']}% in a weak year) and reaches the goal around "
-            f"{stats['Steady']['goal_date']}. Growth could get there around {stats['Growth']['goal_date']} but could fall "
-            f"about {abs(stats['Growth']['dip'])}% in a bad year"
-            + (", which matters with a short timeline." if goal_months <= 36 else ".")
-            + f" Balanced sits in between. Your stated comfort is {comfort.lower()}.",
+                             "weak_market_goal_date": s["weak_date"], "timeline_fit": s["fit"],
+                             "fits_comfort": s["fits"]} for n, s in stats.items()}},
+            f"With {goal_months} months to go, {suggested} fits your timeline best. Steady expects {stats['Steady']['goal_date']} "
+            f"and still lands around {stats['Steady']['weak_date']} if markets are weak. Growth expects {stats['Growth']['goal_date']}, "
+            f"but in weak markets slips to {stats['Growth']['weak_date']}"
+            + (", which is the risk with a short goal." if horizon_band == "short" else ".")
+            + f" Your stated comfort is {comfort.lower()}.",
             "COMPARING YOUR OPTIONS")
-    st.markdown('<div class="cap" style="margin-bottom:12px"><b>Bad-year fall</b>: how much today\'s goal savings could drop in one bad '
-                'market year with that mix; markets usually recover with time, which is why short timelines matter. '
-                '<b>Risk 1–5</b> follows the share in equity. Illustrative mixes for your own decision. Not investment '
-                'advice; no specific funds or stocks are suggested.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cap" style="margin-bottom:12px"><b>Bad-year fall</b>: how much today\'s goal savings could drop in one '
+                'bad year. <b>If markets are weak</b>: the goal date if equity earns only 4% a year. Illustrative, not investment '
+                'advice; no funds or stocks are suggested.</div>', unsafe_allow_html=True)
     nav_buttons(2, 4, f"Plan with {choice}")
 
 
@@ -1827,19 +1856,6 @@ elif S.step == 4:
              f'<div class="kv"><span>Safety net, kept separate</span><b>{short_inr(S.savings)} · {buffer_months:.1f} months</b></div>'
              f'<div class="cap" style="margin-top:6px">Goal money and the emergency buffer stay apart, so a bad market year '
              f'or an emergency does not hit both.</div>')
-        if s["months"] and s["months"] > goal_months:                 # ways back on track (calculated, not recommended)
-            gap_m = s["months"] - goal_months
-            i_m = s["exp_r"] / 12
-            lump = max(0, S.goal_cost - s["fv"]) / ((1 + i_m) ** goal_months) if i_m else max(0, S.goal_cost - s["fv"])
-            g_st = mix_stats("Growth")
-            ways = [f'Put aside <b>{inr(s["need_pm"])}</b> a month (+{inr(s["need_pm"] - S.goal_monthly)})',
-                    f'Add <b>{inr(lump)}</b> once, now', f'Move the target to <b>{s["goal_date"]}</b>']
-            if choice != "Growth" and g_st["months"] and g_st["months"] < s["months"]:
-                ways.append(f'Choose Growth: about <b>{g_st["goal_date"]}</b>, with a bigger bad-year fall')
-            card(f'<div class="row"><span class="k">You miss {fmt_month(S.goal_date)} by {gap_m} month{"s" if gap_m != 1 else ""}</span>'
-                 f'<span class="pill warn">Behind</span></div>'
-                 f'<div class="cap" style="margin:6px 0 4px">Ways to get back on track. Calculated, not recommended; you choose.</div>'
-                 + "".join(f'<div class="kv"><span>{w}</span></div>' for w in ways))
         plan = explain(
             "Write a short, encouraging plan summary (3 sentences) the user can save: what they chose, the monthly "
             "amount, when they may reach the goal, and one thing to check at the next check-in.",
