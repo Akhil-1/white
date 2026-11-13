@@ -22,7 +22,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="White · Your money, nothing hidden", page_icon="○", layout="wide",
+st.set_page_config(page_title="White · Save now, buy later", page_icon="○", layout="wide",
                    initial_sidebar_state="collapsed")
 
 
@@ -940,7 +940,7 @@ def get_secret(name, default=None):
         return default
 
 
-APP_BUILD = "13 Nov · build 13"
+APP_BUILD = "13 Nov · build 14"
 FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 
 
@@ -1552,7 +1552,7 @@ def progress_html():
 masthead = st.container(key="masthead")
 t1, t2 = masthead.columns([4, 1], vertical_alignment="center")
 t1.markdown('<div class="topbar"><div class="logo"><div class="mark"></div><div class="word">White<b>.</b></div>'
-            '<div class="tag">Your money, nothing hidden</div></div>'
+            '<div class="tag">Save now, buy later</div></div>'
             + (progress_html() if S.step > 0 else "") + '</div>', unsafe_allow_html=True)
 t1.button("Home", key="logo_home", on_click=go, args=(0,), help="Back to the salary-day home screen")
 t2.toggle("AI explanations", key="use_ai", help="Turn off to see calculations only.")
