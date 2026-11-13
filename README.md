@@ -1,4 +1,4 @@
-# White · save now, buy later
+# White · save now, spend later
 
 DPM 2026 · IIM Visakhapatnam EMBA · Group 9 · Phase 2 interactive prototype (Streamlit + Gemini)
 
