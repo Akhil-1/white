@@ -656,17 +656,62 @@ def remove_goal():
             S[k] = v
 
 
-def clear_goals():
-    """Start again with one blank goal; the user fills it in on 'Set a goal'."""
+NUM_KEYS = ["salary", "rent", "emi", "sip", "bills", "usual", "savings", "invest", "loans", "cards"]
+
+
+def _reset_goals_and_saved(zero_numbers=False):
+    """One blank goal; optionally every money number to zero; and the same in this month's saved check-in,
+    so Home does not bring the old values back on the next visit."""
     S.goals = [{"goal_type": "Other", "goal_name": "", "goal_cost": 0, "goal_date": add_months(TODAY, 24),
                 "goal_saved": 0, "goal_monthly": 0}]
     S.gi = 0
     for k, v in S.goals[0].items():
         S[k] = v
+    if zero_numbers:
+        for k in NUM_KEYS:
+            S[k] = 0
+            if k + "__s" in S:
+                S[k + "__s"] = 0
+        S.is_fresh = True
     for k in [k for k in S.keys() if str(k).startswith("gval")]:
         del S[k]
     S.choice, S.tune_mix = None, None
+    this_m = TODAY.strftime("%b %Y")
+    blank = {k: (v.isoformat() if k == "goal_date" else v) for k, v in S.goals[0].items()}
+    if zero_numbers or any(h.get("fresh") and h.get("month") == this_m for h in history_all):
+        # a hidden marker remembers the clean start across reloads; saving a real check-in replaces it
+        inputs = {k: (S[k].isoformat() if k == "goal_date" else S[k]) for k in INPUT_KEYS}
+        mark = {"month": this_m, "fresh": True, "inputs": inputs, "goals": [blank], "paid": {}, "moves": {}}
+        hist = [h for h in history_all if not (h.get("fresh") and h.get("month") == this_m)] + [mark]
+        if zero_numbers:                                   # a clean start also drops this month's old check-in
+            hist = [h for h in hist if h.get("fresh") or h.get("month") != this_m]
+        S.store_nonce += 1
+        S.store_save = json.dumps(hist[-13:], ensure_ascii=False)
+    else:
+        hist, changed = [], False
+        for h in history_all:
+            if h.get("month") == this_m:
+                h = dict(h)
+                h["goals"], h["paid"], h["moves"] = [blank], {}, {}
+                h["inputs"] = {**(h.get("inputs") or {}), **blank}
+                changed = True
+            hist.append(h)
+        if changed:
+            S.store_nonce += 1
+            S.store_save = json.dumps(hist, ensure_ascii=False)
+    S.paid, S.moves, S.synced_month = {}, {}, True
+
+
+def clear_goals():
+    """Start again with one blank goal; the user fills it in on 'Set a goal'."""
+    _reset_goals_and_saved()
     go(2)
+
+
+def start_fresh():
+    """Clear the sample: every money number to zero and one blank goal; the user starts on 'Where I stand'."""
+    _reset_goals_and_saved(zero_numbers=True)
+    go(1)
 
 
 def go(step):
@@ -722,11 +767,28 @@ _res = _store(data={"save": S.store_save, "wipe": S.store_wipe}, key=f"store{S.s
               on_history_change=lambda: None)
 S.store_save, S.store_wipe = None, False
 try:
-    history = json.loads(_res.history or "[]")
-    history = [h for h in history if isinstance(h, dict)]
+    history_all = json.loads(_res.history or "[]")
+    history_all = [h for h in history_all if isinstance(h, dict)]
 except Exception:
-    history = []
+    history_all = []
+history = [h for h in history_all if not h.get("fresh")]      # real check-ins only
 last = history[-1] if history else None
+THIS_MONTH = TODAY.strftime("%b %Y")
+fresh_mark = next((h for h in history_all if h.get("fresh") and h.get("month") == THIS_MONTH), None)
+
+
+def _sync_this_month():
+    """New visit: continue from this month's saved state (a clean start, or the last check-in) before drawing."""
+    if S.get("synced_month") or S.step != 0:
+        return
+    if fresh_mark:
+        load_last(nav=False, entry=fresh_mark)
+        S.is_fresh, S.paid = True, {}
+        S.synced_month = True
+    elif last and last.get("month") == THIS_MONTH:
+        load_last(nav=False)
+        S.paid = last.get("paid") or {}
+        S.synced_month = True
 
 
 def num(h, k, default=0):
@@ -738,7 +800,7 @@ def num(h, k, default=0):
 
 def save_checkin(entry):
     """'Save this month' button: replace this month's entry if any, append, write back to the browser."""
-    hist = [h for h in history if h.get("month") != entry["month"]]
+    hist = [h for h in history_all if h.get("month") != entry["month"]]
     hist = (hist + [entry])[-12:]
     S.store_nonce += 1
     S.store_save = json.dumps(hist, ensure_ascii=False)
@@ -750,9 +812,10 @@ def wipe_history():
     S.store_wipe = True
 
 
-def load_last(nav=True):
+def load_last(nav=True, entry=None):
     """Welcome: start from last month's numbers instead of the sample."""
-    inputs = last.get("inputs", {}) if last else {}
+    src = entry or last
+    inputs = src.get("inputs", {}) if src else {}
     for k in INPUT_KEYS:
         if k in inputs:
             v = inputs[k]
@@ -762,7 +825,7 @@ def load_last(nav=True):
                 except Exception:
                     continue
             S[k] = v
-    gl = last.get("goals") if last else None
+    gl = src.get("goals") if src else None
     if gl:
         try:
             S.goals = [{k: (dt.date.fromisoformat(v) if k == "goal_date" else v) for k, v in g.items()} for g in gl]
@@ -773,6 +836,10 @@ def load_last(nav=True):
             pass
     if nav:
         go(1)
+
+
+_sync_this_month()                                     # before any number on the page is worked out
+GOAL_NAME = (S.goal_name or "").strip() or "Your goal"
 
 
 # ═════════════════════════════════════════════════════════════
@@ -797,7 +864,7 @@ def get_secret(name, default=None):
         return default
 
 
-APP_BUILD = "13 Nov · build 6"
+APP_BUILD = "13 Nov · build 9"
 FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 
 
@@ -1414,12 +1481,15 @@ if S.step == 0:
                     '<p style="color:#55565E;font-size:16.5px;line-height:1.6;max-width:480px;margin-bottom:14px">A 10-minute check-in '
                     'that answers <b style="color:#111114">"Am I on track for my goal, and what should I do with this '
                     'month\'s money?"</b> Then test a decision before you make it.</p>', unsafe_allow_html=True)
+        FRESH_HELP = "Clears the sample numbers and every goal, so you can enter your own. Nothing is linked."
         if last:
             b1, b2 = st.columns([1.3, 1])
             b1.button("Use last month's numbers", type="primary", on_click=load_last, key="loadlast")
-            b2.button("Start fresh", on_click=go, args=(1,), key="fresh")
+            b2.button("Start fresh", on_click=start_fresh, key="fresh", help=FRESH_HELP)
         else:
-            st.button("Start check-in", type="primary", on_click=go, args=(1,))
+            b1, b2 = st.columns([1, 1.25])
+            b1.button("Start check-in", type="primary", on_click=go, args=(1,))
+            b2.button("Start fresh with my numbers", on_click=start_fresh, key="fresh", help=FRESH_HELP)
         st.markdown(f'<div class="cap" style="margin-top:10px;display:flex;gap:8px;align-items:center">{icon(I_LOCK, "#8A8B92", 14)}'
                     'No bank login · no SMS reading · nothing on our servers</div>', unsafe_allow_html=True)
         # this month at a glance: three numbers people act on
@@ -1442,7 +1512,8 @@ if S.step == 0:
                  f'<div class="hair"></div>{rows}')
             st.button("Clear history from this browser", on_click=wipe_history, key="wipe", type="tertiary")
         else:
-            card(f'<div class="row"><span class="k">Free to use this month</span><span class="pill gold">Sample</span></div>'
+            sample_pill = "" if S.get("is_fresh") else '<span class="pill gold">Sample</span>'
+            card(f'<div class="row"><span class="k">Free to use this month</span>{sample_pill}</div>'
                  f'<div class="num xl" style="margin-top:8px">{inr(free)}</div>'
                  + bar3(committed, S.usual, max(free, 0), SPLIT_HERO, "20px 0 12px") +
                  f'<div class="legend"><span><i style="background:{SPLIT_HERO[0]}"></i>Fixed expenses <b>{inr(committed)}</b></span>'
@@ -1479,10 +1550,6 @@ if S.step == 0:
     this_month = TODAY.strftime("%b %Y")
     earlier = next((h for h in reversed(history) if h.get("month") != this_month), None)
     prev = {g.get("goal_name"): g for g in (earlier.get("goals") or [])} if earlier else {}
-    if last and last.get("month") == this_month and not S.get("synced_month"):
-        load_last(nav=False)                          # this month's check-in already exists: pick up where you left off
-        S.paid = last.get("paid") or {}
-        S.synced_month = True
     if "paid" not in S:
         S.paid = {}
     paid_now = {k: v for k, v in (S.paid or {}).items() if v == this_month}
@@ -1631,6 +1698,8 @@ elif S.step == 1:
         with st.container(border=True):
             st.markdown('<div class="k" style="padding:6px 0 0">Your monthly numbers</div>', unsafe_allow_html=True)
             tab1, tab2, tab3 = st.tabs(["Income", "Fixed monthly expenses", "Savings & loans"])
+            st.button("Clear all numbers and goals", key="fresh1", type="tertiary", on_click=start_fresh,
+                      help="Sets every amount to zero and removes all goals, so you can type your own.")
             with tab1:
                 money("Take-home salary (₹/month)", "salary", 500000, 5000)
                 st.slider("Salary day (date of month)", min_value=1, max_value=28, step=1, key="salary_day",
