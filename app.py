@@ -763,29 +763,88 @@ def get_secret(name, default=None):
         return default
 
 
+APP_BUILD = "13 Nov · build 4"
+FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
+
+
+def _model_unavailable(e):
+    """True when the error is about the model (retired, renamed, not open to this key), not the key or quota."""
+    t = str(e).lower()
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+    return code in (404, 403) or any(w in t for w in ("not found", "not supported", "no longer available",
+                                                      "is not available", "permission_denied", "access"))
+
+
+def _generate(api_key, model, contents, system_prompt):
+    """Ask Gemini, trying the chosen model first and then current Flash models if Google rejects that model."""
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=api_key)
+    tried, last = [], None
+    for m in (model, *FALLBACK_MODELS):
+        if not m or m in tried:
+            continue
+        tried.append(m)
+        try:
+            r = client.models.generate_content(model=m, contents=contents,
+                                               config=types.GenerateContentConfig(system_instruction=system_prompt, temperature=0.4))
+            return (r.text or "").strip()
+        except Exception as e:
+            last = e
+            try:
+                e.tried = list(tried)
+            except Exception:
+                pass
+            if not _model_unavailable(e) or "api_key_invalid" in str(e).lower() or "api key not valid" in str(e).lower():
+                raise
+    raise last
+
+
+def ai_error(e):
+    """A short, safe reason for the card footer (never the key)."""
+    t = str(e).lower()
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+    if "api_key_invalid" in t or "api key not valid" in t:
+        return "the key is not valid: copy it again from AI Studio"
+    if code == 429 or "resource_exhausted" in t or "quota" in t:
+        return "free quota used up: try again in a minute"
+    if "location" in t and "not supported" in t:
+        return "Gemini is not available in this region"
+    if code in (403,) or "permission" in t:
+        return "this key cannot use Gemini: create a new key in AI Studio"
+    if code == 404 or "not found" in t:
+        return "model not available: remove GEMINI_MODEL from Secrets"
+    return f"{type(e).__name__}{' ' + str(code) if code else ''}: {_google_msg(e)[:80]}"
+
+
+def _google_msg(e):
+    """Google's own error sentence, with anything that looks like a key removed."""
+    t = str(e)
+    m = re.search(r"['\"]message['\"]:\s*['\"]([^'\"]+)", t)
+    msg = m.group(1) if m else t
+    return re.sub(r"AIza[0-9A-Za-z_\-]+", "AIza…", msg).strip()
+
+
+def key_check(key):
+    """Plain checks on the key's shape, without showing it."""
+    if not key:
+        return "No GEMINI_API_KEY found in Secrets."
+    notes = [f"Key found: starts {key[:4]}…, {len(key)} characters."]
+    if key != key.strip():
+        notes.append("It has spaces at the start or end: remove them.")
+    if any(c in key for c in "“”‘’\""):
+        notes.append("It contains quote marks inside: use straight quotes only around it.")
+    if not key.startswith("AIza"):
+        notes.append("Gemini keys from AI Studio usually start with AIza: check you copied the API key itself.")
+    elif len(key.strip()) != 39:
+        notes.append("Gemini keys are usually 39 characters: part of it may be missing.")
+    return " ".join(notes)
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def call_gemini(task, facts_json, api_key, model):
     """One task + the calculated facts -> Gemini -> short text. Cached so reruns don't call again."""
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=api_key)
-    try:
-        resp = client.models.generate_content(
-            model=model,
-            contents=f"TASK: {task}\n\nFACTS (calculated by the app):\n{facts_json}",
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.4),
-        )
-    except Exception as e:                           # model name retired? try the stable one once
-        if "not found" in str(e).lower() and model != "gemini-2.5-flash":
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=f"TASK: {task}\n\nFACTS (calculated by the app):\n{facts_json}",
-                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.4),
-            )
-        else:
-            raise
-    return (resp.text or "").strip()
+    return _generate(api_key, model, f"TASK: {task}\n\nFACTS (calculated by the app):\n{facts_json}", SYSTEM_PROMPT)
 
 
 def explain(task, facts, fallback_text, title):
@@ -800,7 +859,9 @@ def explain(task, facts, fallback_text, title):
             if out:
                 text, source = out, "Explained by Gemini · numbers calculated by the app"
         except Exception as e:
-            source = f"AI unavailable ({type(e).__name__}) · showing calculations only"
+            source = f"AI unavailable ({ai_error(e)}) · showing calculations only"
+            S["ai_diag"] = (f"{type(e).__name__} {getattr(e, 'code', '') or ''} · models tried: "
+                            f"{', '.join(getattr(e, 'tried', []) or ['?'])} · Google says: {_google_msg(e)[:300]} · {key_check(key)}")
     elif S.use_ai:
         source = "No Gemini key set · showing calculations only"
     card(f'<div class="ai-head">{icon(I_SPARK, "#B8862B", 14)} {title}</div>'
@@ -808,6 +869,9 @@ def explain(task, facts, fallback_text, title):
     with st.expander("What's sent to the AI"):
         st.caption("Only these summary numbers. No names, account numbers or transactions. Nothing is stored.")
         st.code(facts_json, language="json")
+        if source.startswith("AI unavailable") and S.get("ai_diag"):
+            st.caption("Connection details (for fixing the key; the key itself is never shown)")
+            st.code(S["ai_diag"], language=None)
     return text
 
 
@@ -820,18 +884,7 @@ You are answering one question from the user about their own plan, inside the ap
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def call_chat(question, facts_json, api_key, model):
-    from google import genai
-    from google.genai import types
-    client = genai.Client(api_key=api_key)
-    contents = f"QUESTION: {question}\n\nFACTS (calculated by the app):\n{facts_json}"
-    for m in (model, "gemini-2.5-flash"):
-        try:
-            r = client.models.generate_content(model=m, contents=contents,
-                                               config=types.GenerateContentConfig(system_instruction=CHAT_PROMPT, temperature=0.4))
-            return (r.text or "").strip()
-        except Exception as e:
-            if "not found" not in str(e).lower() or m == "gemini-2.5-flash":
-                raise
+    return _generate(api_key, model, f"QUESTION: {question}\n\nFACTS (calculated by the app):\n{facts_json}", CHAT_PROMPT)
 
 
 def ask(q, facts):
@@ -844,7 +897,7 @@ def ask(q, facts):
             return
         except Exception as e:
             S.chat.append((q, "The AI is unavailable right now. For a purchase or a delay, use the What if… check above: "
-                              "enter the amount and see your goal date and buffer move.", f"AI unavailable ({type(e).__name__})"))
+                              "enter the amount and see your goal date and buffer move.", f"AI unavailable ({ai_error(e)})"))
             return
     S.chat.append((q, "AI answers are off or no Gemini key is set. For a purchase or a delay, use the What if… check above: "
                       "enter the amount and see what happens to your goal date and buffer.", "Calculations only · AI is off"))
@@ -2009,5 +2062,5 @@ _SUG = {0: ["Can I afford a ₹15,000 phone?", "What if my salary is 5 days late
         4: ["I have a ₹25,000 birthday trip next month. What changes?", "What if my salary is 5 days late?", "Should I change my strategy?"]}
 assistant(_ctx, _SUG.get(S.step, _SUG[0]))
 
-st.markdown('<div class="footer">No account linking · history only in your browser · you make every decision · '
+st.markdown(f'<div class="footer">Build {APP_BUILD} · No account linking · history only in your browser · you make every decision · '
             'DPM 2026 · Group 9 prototype</div>', unsafe_allow_html=True)
