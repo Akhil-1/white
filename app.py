@@ -14,6 +14,7 @@ import datetime as dt
 import html as html_lib
 import hashlib
 import json
+import time
 import re
 import math
 
@@ -297,6 +298,8 @@ div[data-testid="stCaptionContainer"] p { color: var(--ink-3) !important; }
 .verdict.warn { background: #FDF0EC; color: #7A2E1A; border: 1px solid #F2CDBF; }
 .plan-opt { background:#fff; border:1px solid var(--line); border-radius: 16px; padding: 14px 16px; min-height: 176px; margin-bottom: 6px; }
 .plan-opt.dim { opacity: .55; }
+.st-key-start_ci button, .st-key-loadlast button { background: #2453B8 !important; border-color: #2453B8 !important; }
+.st-key-start_ci button:hover, .st-key-loadlast button:hover { background: #1D449A !important; border-color: #1D449A !important; }
 .plan-opt.on { border: 2px solid var(--ink); box-shadow: 0 6px 18px rgba(20,33,61,.10); }
 .plan-opt .what { font-size: 15.5px; margin: 6px 0 2px; } .plan-opt .when { font-family: var(--display); font-size: 22px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
 @media (min-width: 1760px) { .block-container { max-width: 1560px !important; } :root { --mw: 1560px; } }
@@ -434,6 +437,35 @@ def months_to_goal(saved, monthly, target, annual_return):
     return n
 
 
+def months_to_goal_f(saved, monthly, target, annual_return):
+    """Like months_to_goal, but fractional (e.g. 14.5), so a small change shows up in days."""
+    i = annual_return / 12
+    bal, n = saved, 0
+    if bal >= target:
+        return 0.0
+    while True:
+        prev = bal
+        n += 1
+        bal = bal * (1 + i) + monthly
+        if bal >= target:
+            return n - 1 + (target - prev) / max(1e-9, bal - prev)
+        if n > 600:
+            return None
+
+
+def shift_words(f_before, f_after):
+    """'About 16 days later' / 'About 2 months later' / 'No change' from two fractional month counts."""
+    if f_before is None or f_after is None:
+        return ("warn", "Goal not reached at this pace")
+    days = round((f_after - f_before) * 30.4)
+    if abs(days) < 1:
+        return ("ok", "No change to the goal date")
+    later = days > 0
+    d = abs(days)
+    txt = f"About {d} day{'s' if d != 1 else ''}" if d < 45 else f"About {round(d / 30.4)} month{'s' if round(d / 30.4) != 1 else ''}"
+    return ("warn" if later else "ok", txt + (" later" if later else " sooner"))
+
+
 def path(saved, monthly, annual_return, months):
     """Balance at the end of each month, month 0..months (for the charts)."""
     i = annual_return / 12
@@ -481,6 +513,17 @@ def _from_box(key):
     S[key + "__s"] = int(S[key] or 0)
 
 
+def fmt_in(n):
+    """145000 -> '1,45,000' (Indian grouping, no symbol) for the amount boxes."""
+    return inr(int(n or 0)).replace("₹", "")
+
+
+def _from_text(key):
+    raw = re.sub(r"[^0-9]", "", S.get(key + "__t") or "")
+    S[key] = int(raw) if raw else 0
+    S[key + "__s"] = S[key]
+
+
 def money(label, key, hi, step, help=None, where=None, ratio=(2.2, 1)):
     """One amount, two ways to set it: drag the slider for speed, type in the box for precision."""
     where = where or st
@@ -488,10 +531,22 @@ def money(label, key, hi, step, help=None, where=None, ratio=(2.2, 1)):
     top = int(max(hi, v))
     if S.get(key + "__s") != v:
         S[key + "__s"] = v
+    if S.get(key + "__t") != fmt_in(v):
+        S[key + "__t"] = fmt_in(v)
     a, b = where.container(key=f"pair_{key}").columns(list(ratio), vertical_alignment="bottom", gap="small")
     a.slider(label, 0, top, step=step, key=key + "__s", on_change=_from_slider, args=(key,), help=help)
-    b.number_input(label, min_value=0, step=step, key=key, on_change=_from_box, args=(key,), label_visibility="collapsed")
+    b.text_input(label, key=key + "__t", on_change=_from_text, args=(key,), label_visibility="collapsed",
+                 placeholder="0")
 
+
+
+def amount_box(label, key, where=None, help=None):
+    """A single amount box with Indian commas (no slider)."""
+    where = where or st
+    v = int(S[key] or 0)
+    if S.get(key + "__t") != fmt_in(v):
+        S[key + "__t"] = fmt_in(v)
+    where.text_input(label, key=key + "__t", on_change=_from_text, args=(key,), help=help, placeholder="0")
 
 
 def ring(frac, color, size=112, stroke=10, label="", sub=""):
@@ -605,19 +660,28 @@ def quick_entry_fields(e):
     return e
 
 
-def mark_paid(i, free_v, buf_v, nw_v, undo=False):
-    """Home: 'I've put this month's amount aside' moves the goal forward and saves the check-in in this browser."""
+def mark_paid(i, free_v, buf_v, nw_v, undo=False, mode="monthly"):
+    """Home: put money aside for a goal (the monthly amount or a lump sum), any day, as often as needed.
+    Moves the goal forward and saves the check-in in this browser. Undo reverses the last addition."""
     S.goals[S.gi] = {k: S[k] for k in GOAL_KEYS}
     g = S.goals[i]
-    step_amt = (g["goal_monthly"] or 0) * (-1 if undo else 1)
-    g["goal_saved"] = max(0, min(g["goal_cost"], (g["goal_saved"] or 0) + step_amt))
+    if undo:
+        la = S.get("last_add")
+        amt = -la[1] if la and la[0] == i else 0
+        S.last_add = None
+    else:
+        amt = int(S.get(f"lump{i}") or 0) if mode == "lump" else int(g["goal_monthly"] or 0)
+        if amt <= 0:
+            return
+        S.last_add = (i, amt)
+        if mode == "lump":
+            S[f"lump{i}"] = 0
+    g["goal_saved"] = max(0, min(g["goal_cost"], (g["goal_saved"] or 0) + amt))
     if i == S.gi:
         S.goal_saved = g["goal_saved"]
     month = TODAY.strftime("%b %Y")
     paid = dict(S.get("paid") or {})
-    if undo:
-        paid.pop(g["goal_name"], None)
-    else:
+    if not undo:
         paid[g["goal_name"]] = month
     S.paid = paid
     e = dict(last) if last and last.get("month") == month else {}
@@ -864,7 +928,7 @@ def get_secret(name, default=None):
         return default
 
 
-APP_BUILD = "13 Nov · build 9"
+APP_BUILD = "13 Nov · build 11"
 FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 
 
@@ -948,12 +1012,23 @@ def call_gemini(task, facts_json, api_key, model):
     return _generate(api_key, model, f"TASK: {task}\n\nFACTS (calculated by the app):\n{facts_json}", SYSTEM_PROMPT)
 
 
+def typewriter(render, text, step=3, pause=0.03):
+    """Show text a few words at a time, like it is being written. render(part, done) returns the HTML."""
+    ph = st.empty()
+    words = text.split(" ")
+    for j in range(step, len(words), step):
+        ph.markdown(render(" ".join(words[:j]), False), unsafe_allow_html=True)
+        time.sleep(pause)
+    ph.markdown(render(text, True), unsafe_allow_html=True)
+
+
 def explain(task, facts, fallback_text, title):
     """AI explanation card (gold rule). Uses a rule-based sentence if AI is off, has no key, or fails."""
     facts_json = json.dumps(facts, ensure_ascii=False, indent=1)
     key = get_secret("GEMINI_API_KEY")
     text, source = fallback_text, "Calculations only · AI is off"
     store = S.setdefault("ai_texts", {})                      # card title -> (facts hash, Gemini text)
+    typed = False
     h = hashlib.md5((task + facts_json).encode()).hexdigest()
     prev = store.get(title)
     stale = False
@@ -968,6 +1043,7 @@ def explain(task, facts, fallback_text, title):
                 if out:
                     store[title] = (h, out)
                     text, source = out, "Explained by Gemini · numbers calculated by the app"
+                    typed = True
             except Exception as e:
                 store[title] = (None, "")                      # don't retry on every change after a failure
                 source = f"AI unavailable ({ai_error(e)}) · showing calculations only"
@@ -979,8 +1055,12 @@ def explain(task, facts, fallback_text, title):
                       else "Calculated by the app · tap below for a plain-words explanation")
     elif S.use_ai:
         source = "No Gemini key set · showing calculations only"
-    card(f'<div class="ai-head">{icon(I_SPARK, "#B8862B", 14)} {title}</div>'
-         f'<p class="ai-text">{text}</p><div class="ai-src">{source}</div>', "card ai")
+    head_ = f'<div class="ai-head">{icon(I_SPARK, "#B8862B", 14)} {title}</div>'
+    if typed:                                                  # a fresh answer types itself out
+        typewriter(lambda part, done: f'<div class="card ai">{head_}<p class="ai-text">{part}{"" if done else "▍"}</p>'
+                                      + (f'<div class="ai-src">{source}</div>' if done else '') + '</div>', text)
+    else:
+        card(f'{head_}<p class="ai-text">{text}</p><div class="ai-src">{source}</div>', "card ai")
     if stale:
         st.button("✨ Update AI explanation" if prev and prev[0] else "✨ Explain with AI",
                   key="aigo_" + hashlib.md5(title.encode()).hexdigest()[:8], type="tertiary",
@@ -1086,19 +1166,27 @@ def assistant(ctx, suggestions):
                                     "goal": ctx["goal"], "mix": ctx["mix"], "calculated_answer": base}, ensure_ascii=False, default=str)
                 a = call_chat(q, facts, key, get_secret("GEMINI_MODEL", "gemini-flash-latest"))
                 S.assist.append((q, a or base, "Gemini, from your numbers"))
+                S.assist_new = True
                 return
             except Exception:
                 pass
         S.assist.append((q, base, "Calculated from your numbers"))
+        S.assist_new = True
     with st.container(key="assistant"):
         with st.popover("Ask White", icon=":material/auto_awesome:"):
             st.markdown('<b style="font-size:17px">Ask White</b><div class="cap">Answers from your numbers on this screen. '
                         'It never picks a product or tells you what to do.</div>', unsafe_allow_html=True)
             for i, sq in enumerate(suggestions):
                 st.button(sq, key=f"as{S.step}_{i}", width="stretch", type="tertiary", on_click=_ask, args=(sq,))
-            for cq, ca, csrc in S.assist[-4:]:
-                st.markdown(f'<div class="bub q">{esc(cq)}</div><div class="bub a">{esc(ca)}<div class="src">{csrc}</div></div>',
-                            unsafe_allow_html=True)
+            recent = S.assist[-4:]
+            for n_, (cq, ca, csrc) in enumerate(recent):
+                if n_ == len(recent) - 1 and S.get("assist_new"):
+                    S.assist_new = False
+                    typewriter(lambda part, done, cq=cq, csrc=csrc: f'<div class="bub q">{esc(cq)}</div><div class="bub a">{esc(part)}'
+                               + ("" if done else "▍") + (f'<div class="src">{csrc}</div>' if done else '') + '</div>', ca)
+                else:
+                    st.markdown(f'<div class="bub q">{esc(cq)}</div><div class="bub a">{esc(ca)}<div class="src">{csrc}</div></div>',
+                                unsafe_allow_html=True)
             with st.form(f"assist_form{S.step}", clear_on_submit=True, border=False):
                 fa, fb = st.columns([4, 1], vertical_alignment="bottom")
                 q_ = fa.text_input("Ask", placeholder="e.g. Can I afford a ₹25,000 trip?", label_visibility="collapsed")
@@ -1173,7 +1261,8 @@ def mix_stats(name):
         "need_pm": monthly_needed(S.goal_saved, S.goal_cost, exp_r, goal_months),   # to be on time with this mix
         "fv": path(S.goal_saved, S.goal_monthly, exp_r, goal_months)[-1],              # value on the target date
         "late": (n_exp - goal_months) if n_exp else None,                               # months late (+) / early (−)
-        "drop_amt": abs((d * WEAK_YEAR[0] + e * WEAK_YEAR[1] + g * WEAK_YEAR[2]) / 100) / 100 * S.goal_saved,
+        "drop_amt": max(0.0, -(d * WEAK_YEAR[0] + e * WEAK_YEAR[1] + g * WEAK_YEAR[2]) / 100) / 100 * S.goal_saved,
+        "year_chg": (d * WEAK_YEAR[0] + e * WEAK_YEAR[1] + g * WEAK_YEAR[2]) / 10000 * S.goal_saved,   # signed
         "risk": {"Steady": 2, "Balanced": 3, "Growth": 4}[name],                        # 1–5, from the equity share
     }
 
@@ -1488,7 +1577,7 @@ if S.step == 0:
             b2.button("Start fresh", on_click=start_fresh, key="fresh", help=FRESH_HELP)
         else:
             b1, b2 = st.columns([1, 1.25])
-            b1.button("Start check-in", type="primary", on_click=go, args=(1,))
+            b1.button("Start check-in", type="primary", on_click=go, args=(1,), key="start_ci")
             b2.button("Start fresh with my numbers", on_click=start_fresh, key="fresh", help=FRESH_HELP)
         st.markdown(f'<div class="cap" style="margin-top:10px;display:flex;gap:8px;align-items:center">{icon(I_LOCK, "#8A8B92", 14)}'
                     'No bank login · no SMS reading · nothing on our servers</div>', unsafe_allow_html=True)
@@ -1528,22 +1617,27 @@ if S.step == 0:
             amt, src = S.quick_amt or 0, S.quick_src or "Free money"
             if amt > 0 and S.goals:
                 g0 = S.goals[0] if S.gi >= len(S.goals) else S.goals[S.gi]
+                cost0, sv0, m0 = g0["goal_cost"] or 1, g0["goal_saved"] or 0, g0["goal_monthly"] or 0
+                nm0 = esc(g0["goal_name"] or "Your goal")
+                f_a = months_to_goal_f(sv0, m0, cost0, 0)
                 if src == "Free money":
                     left_free = free - amt
-                    verdict = ("ok", "Fits this month") if left_free >= 0 else ("warn", "More than this month's free money")
-                    body = (f'<div class="kv"><span>Free this month</span><b>{inr(free)} → {inr(left_free)}</b></div>'
-                            f'<div class="kv"><span>{esc(g0["goal_name"])}</span><b>unchanged</b></div>')
+                    over_ = max(0, amt - max(free, 0))
+                    verdict = ("ok", "Fits this month's free money") if over_ == 0 else ("warn", f"{inr(over_)} more than your free money")
+                    body = (f'<div class="kv"><span>Free this month</span><b>{inr(free)} → {inr(max(left_free, 0))}</b></div>'
+                            + (f'<div class="kv"><span>From savings (buffer)</span><b>{inr(over_)} · {buffer_months:.1f} → '
+                               f'{max(0, S.savings - over_) / essential if essential else 0:.1f} mo</b></div>' if over_ else '')
+                            + f'<div class="kv"><span>{nm0} reached</span><b>{fmt_month(add_months(TODAY, math.ceil(f_a))) if f_a is not None else "—"} · unchanged</b></div>')
                 else:
-                    cost0, sv0, m0 = g0["goal_cost"] or 1, g0["goal_saved"] or 0, g0["goal_monthly"] or 0
-                    n_a, n_b = months_to_goal(sv0, m0, cost0, 0), months_to_goal(max(0, sv0 - amt), m0, cost0, 0)
-                    shift = (n_b or 0) - (n_a or 0)
-                    days = round(min(amt, sv0) / m0 * 30.4) if m0 else 0
-                    late_txt_ = (f"About {days} days later" if days < 45 else f"About {round(days / 30.4)} month{'s' if round(days / 30.4) != 1 else ''} later")
-                    verdict = ("ok", "No change to the goal date") if days == 0 else ("warn", late_txt_)
-                    da = fmt_month(add_months(TODAY, n_a)) if n_a else "—"
-                    db = fmt_month(add_months(TODAY, n_b)) if n_b else "—"
-                    body = (f'<div class="kv"><span>{esc(g0["goal_name"])} reached</span><b>{da} → {db}</b></div>'
-                            f'<div class="kv"><span>Free this month</span><b>unchanged</b></div>')
+                    f_b = months_to_goal_f(sv0 - amt, m0, cost0, 0)      # comes out of this month's goal money
+                    verdict = shift_words(f_a, f_b)
+                    da = fmt_month(add_months(TODAY, math.ceil(f_a))) if f_a is not None else "—"
+                    db = fmt_month(add_months(TODAY, math.ceil(f_b))) if f_b is not None else "—"
+                    gm0 = max(1, months_between(TODAY, g0["goal_date"]))
+                    need_a, need_b = max(0, cost0 - sv0) / gm0, max(0, cost0 - sv0 + amt) / gm0
+                    body = (f'<div class="kv"><span>{nm0} reached</span><b>{da} → {db}</b></div>'
+                            f'<div class="kv"><span>To stay on time</span><b>{inr(need_a)} → {inr(need_b)}/month</b></div>'
+                            f'<div class="kv"><span>Free this month</span><b>{inr(free)} · unchanged</b></div>')
                 st.markdown(f'<div class="quick-out"><span class="pill {verdict[0]}">{verdict[1]}</span>{body}</div>', unsafe_allow_html=True)
 
     # ── salary-day goal tracker: how close each goal is, and what today's salary changes
@@ -1624,18 +1718,31 @@ if S.step == 0:
             if html:
                 h_, i_, done_, m_ = html
                 c.markdown(h_, unsafe_allow_html=True)
-                with c.popover("Update today's value", width="stretch"):
+                pa, pb = c.columns(2, gap="small")
+                with pa.popover("Add a lump sum", width="stretch"):
+                    st.caption("A bonus, a gift, a matured FD: add any amount to this goal, any day.")
+                    S[f"lump{i_}"] = S.get(f"lump{i_}", 0)
+                    money("Amount (₹)", f"lump{i_}", 500000, 1000, ratio=(1.6, 1))
+                    st.button("Add to this goal", key=f"lumpgo{i_}", type="primary", width="stretch",
+                              on_click=mark_paid, args=(i_, free, buffer_months, net_worth, False, "lump"))
+                with pb.popover("Update today's value", width="stretch"):
                     st.caption("Invested this goal's money in a fund, RD or FD? Check your app and type what it is worth today. "
                                "White re-plans from it. Nothing is linked.")
-                    st.number_input("Worth today (₹)", min_value=0, step=1000, key=f"gval{i_}", value=int(S.goals[i_]["goal_saved"] or 0))
+                    cur_ = int(S.goals[i_]["goal_saved"] or 0)
+                    if S.get(f"gval{i_}_src") != cur_:
+                        S[f"gval{i_}"], S[f"gval{i_}_src"] = cur_, cur_
+                    money("Worth today (₹)", f"gval{i_}", max(1000000, cur_ * 2), 1000, ratio=(1.6, 1))
                     st.button("Save value", key=f"gsave{i_}", type="primary", width="stretch",
                               on_click=set_goal_value, args=(i_, free, buffer_months, net_worth))
-                if done_:
-                    c.button("Undo", key=f"unpaid{i_}", on_click=mark_paid, args=(i_, free, buffer_months, net_worth, True))
-                else:
-                    c.button(f"I've put aside {inr(m_)}", key=f"paid{i_}", type="primary", width="stretch",
-                             on_click=mark_paid, args=(i_, free, buffer_months, net_worth),
-                             help="Moves this goal forward and saves this month's check-in in this browser only.")
+                c.button(f"I've put aside {inr(m_)}", key=f"paid{i_}", type="primary", width="stretch",
+                         on_click=mark_paid, args=(i_, free, buffer_months, net_worth),
+                         help="Adds this amount to the goal, any day, as often as you put money aside. Saved in this browser only.")
+                la_ = S.get("last_add")
+                if la_ and la_[0] == i_:
+                    u1, u2 = c.columns([2.2, 1], vertical_alignment="center")
+                    u1.markdown(f'<div class="cap">Added {inr(la_[1])} just now.</div>', unsafe_allow_html=True)
+                    u2.button("Undo", key=f"unpaid{i_}", type="tertiary",
+                              on_click=mark_paid, args=(i_, free, buffer_months, net_worth, True))
             else:
                 box = c.container(key="addgoal")
                 if cards:
@@ -1718,9 +1825,9 @@ elif S.step == 1:
                 money("Savings & FDs you could use in an emergency", "savings", 2000000, 10000)
                 with st.expander("Optional · for your net worth"):
                     c1, c2 = st.columns(2)
-                    c1.number_input("Investments", min_value=0, step=10000, key="invest", help="MFs, stocks, PF, NPS…")
-                    c2.number_input("Credit card dues", min_value=0, step=1000, key="cards")
-                    st.number_input("Loans outstanding", min_value=0, step=10000, key="loans")
+                    amount_box("Investments (₹)", "invest", where=c1, help="MFs, stocks, PF, NPS…")
+                    amount_box("Credit card dues (₹)", "cards", where=c2)
+                    amount_box("Loans outstanding (₹)", "loans")
                 st.caption("Why we ask: savings set your emergency buffer (how long you could cope without salary); loans and dues give your net worth. A snapshot of today; FD and loan interest are not projected.")
         if free <= 0:
             st.error("Commitments and usual spending are more than your salary this month.")
@@ -1895,7 +2002,8 @@ elif S.step == 3:
             gain_ = st_["months"] - gr_["months"]
             st.markdown(f'<div class="tradeoff"><b>The trade-off:</b> Growth gets you there '
                         f'<b>{gain_} month{"s" if gain_ != 1 else ""} sooner</b> than Steady, but one bad year could knock '
-                        f'<b>{inr(gr_["drop_amt"])}</b> off your goal money (Steady: {inr(st_["drop_amt"])}).'
+                        f'<b>{inr(gr_["drop_amt"])}</b> off your goal money ('
+                        + (f'Steady: {inr(st_["drop_amt"])}).' if st_["drop_amt"] >= 1 else f'Steady would still be up about {inr(st_["year_chg"])}).')
                         + (' With a short goal, there may be no time to recover.' if horizon_band == "short" else '')
                         + '</div>', unsafe_allow_html=True)
     st.markdown('<div class="cap mob-only" style="margin:4px 0 10px">Swipe to compare the three mixes →</div>',
@@ -1917,7 +2025,7 @@ elif S.step == 3:
                 f'<span class="{"warn" if (s["late"] or 1) > 0 else "good"}" style="font-weight:600">· {late_txt(s["late"])}</span></b></div>'
                 f'<div class="kv"><span>If markets are weak</span><b class="{"warn" if (s["weak_late"] or 1) > 0 else "good"}">{s["weak_date"]}</b></div>'
                 f'<div class="kv"><span>To be on time</span><b>{inr(s["need_pm"])}/mo</b></div>'
-                f'<div class="kv"><span>Bad-year fall</span><b>−{inr(s["drop_amt"])}</b></div></div>'
+                f'<div class="kv"><span>In a bad year</span><b>{"−" + inr(s["drop_amt"]) if s["drop_amt"] >= 1 else "+" + inr(s["year_chg"]) + ", holds up"}</b></div></div>'
                 f'<div class="foot"><span class="pill {fit_txt[0]}">{fit_txt[1]}</span>'
                 f'<div class="cap" style="margin-top:8px">{"Within" if s["fits"] else "Above"} your stated comfort</div></div></div>',
                 unsafe_allow_html=True)
@@ -1940,7 +2048,7 @@ elif S.step == 3:
             + (", which is the risk with a short goal." if horizon_band == "short" else ".")
             + f" Your stated comfort is {comfort.lower()}.",
             "COMPARING YOUR OPTIONS")
-    st.markdown('<div class="cap" style="margin-bottom:12px"><b>Bad-year fall</b>: how much today\'s goal savings could drop in one '
+    st.markdown('<div class="cap" style="margin-bottom:12px"><b>In a bad year</b>: how much today\'s goal savings could rise or fall in one '
                 'bad year. <b>If markets are weak</b>: the goal date if equity earns only 4% a year. Illustrative, not investment '
                 'advice; no funds or stocks are suggested.</div>', unsafe_allow_html=True)
     nav_buttons(2, 4, f"Plan with {choice}")
@@ -2070,7 +2178,7 @@ elif S.step == 4:
              f'<div class="kv"><span>Your target</span><b>{fmt_month(S.goal_date)}</b></div>'
              f'<div class="kv"><span>To be on time with this mix</span><b>{inr(s["need_pm"])}/mo</b></div>'
              f'<div class="kv"><span>Likely range</span><b>{s["range"]}</b></div>'
-             f'<div class="kv"><span>Bad-year fall</span><b>about −{inr(s["drop_amt"])}</b></div>'
+             f'<div class="kv"><span>In a bad year</span><b>{"about −" + inr(s["drop_amt"]) if s["drop_amt"] >= 1 else "+" + inr(s["year_chg"]) + ", holds up"}</b></div>'
              f'<div class="kv"><span>Left free this month</span><b>{inr(left_after)}</b></div>'
              f'<div class="kv"><span>Next check-in</span><b>{next_salary.strftime("%d %b %Y")}</b></div>', "card hero")
         dd, ee, gg = s["debt"], s["equity"], s["gold"]
@@ -2111,7 +2219,7 @@ elif S.step == 4:
         after_saved, after_monthly, after_savings = S.goal_saved, S.goal_monthly, S.savings
         if S.wi_kind != "Change monthly amount":
             if S.wi_from == "This month's goal money":
-                after_saved = max(0, S.goal_saved - S.wi_amount)
+                after_saved = S.goal_saved - S.wi_amount              # may dip below zero: this month's contribution
             else:
                 after_savings = max(0, S.savings - S.wi_amount)
             decision = f"spend {inr(S.wi_amount)} this month, paid from {S.wi_from.lower()}"
@@ -2132,7 +2240,11 @@ elif S.step == 4:
         elif shift < 0:
             shift_txt, shift_cls = f"{-shift} month{'s' if shift != -1 else ''} sooner", "ok"
         else:
-            shift_txt, shift_cls = "no change", ""
+            f_b4 = months_to_goal_f(S.goal_saved, S.goal_monthly, S.goal_cost, exp_r)
+            f_af = months_to_goal_f(after_saved, after_monthly, S.goal_cost, exp_r)
+            cls_, words_ = shift_words(f_b4, f_af)
+            shift_txt, shift_cls = (("no change", "") if words_.startswith("No change")
+                                    else (words_.replace("About ", "") + ", same month", cls_))
         buf_delta = after_buffer - buffer_months
         buf_txt = "no change" if abs(buf_delta) < 0.05 else f"{buf_delta:+.1f} months"
         buf_cls = "warn" if buf_delta < -0.04 else ("ok" if buf_delta > 0.04 else "")
