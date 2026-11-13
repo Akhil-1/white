@@ -77,6 +77,18 @@ div[data-testid="stHorizontalBlock"]:has(.topbar) > div[data-testid="stColumn"]:
 .logo .word { font-family: var(--display); font-weight:700; font-size:27px; letter-spacing:-.4px; color:var(--ink); }
 .logo .word b { color: var(--accent); }
 .logo .tag { font-size:14px; color: var(--ink-3); margin-left:2px; white-space:nowrap; }
+/* the logo is the home button: an invisible button laid over it */
+.st-key-masthead [data-testid="stColumn"]:first-child { position: relative; }
+.st-key-masthead .st-key-logo_home { position: absolute !important; top: 0; left: 0; width: 170px; height: 46px; z-index: 5; margin: 0 !important; }
+.st-key-masthead .st-key-logo_home button { opacity: 0 !important; width: 100% !important; height: 100% !important; min-height: 0 !important; cursor: pointer; }
+.st-key-masthead .logo { transition: opacity .15s; }
+.st-key-masthead [data-testid="stColumn"]:first-child:has(.st-key-logo_home:hover) .logo .word { opacity: .85; }
+/* "Your check-ins" in brand blue */
+.card.checkins { background: linear-gradient(135deg, #2453B8 0%, #1C3F8F 100%); border-color: #1C3F8F; color: #fff; }
+.card.checkins .k, .card.checkins .num, .card.checkins .hist b { color: #fff !important; }
+.card.checkins .cap, .card.checkins .hist span { color: #D6E1FA !important; }
+.card.checkins .pill { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.25); }
+.card.checkins .hair { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.22); }
 .steps { display:none; align-items:center; gap:6px; }
 .steps .st { display:flex; align-items:center; gap:7px; font-size:14px; color: var(--ink-3); font-weight:600; white-space:nowrap; }
 .steps .st .n { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center;
@@ -928,7 +940,7 @@ def get_secret(name, default=None):
         return default
 
 
-APP_BUILD = "13 Nov · build 11"
+APP_BUILD = "13 Nov · build 12"
 FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 
 
@@ -1541,6 +1553,7 @@ t1, t2 = masthead.columns([4, 1], vertical_alignment="center")
 t1.markdown('<div class="topbar"><div class="logo"><div class="mark"></div><div class="word">White<b>.</b></div>'
             '<div class="tag">Your money, nothing hidden</div></div>'
             + (progress_html() if S.step > 0 else "") + '</div>', unsafe_allow_html=True)
+t1.button("Home", key="logo_home", on_click=go, args=(0,), help="Back to the salary-day home screen")
 t2.toggle("AI explanations", key="use_ai", help="Turn off to see calculations only.")
 if S.step > 0:
     if S.nav not in STEPS:
@@ -1598,7 +1611,7 @@ if S.step == 0:
             card(f'<div class="row"><span class="k">Your check-ins</span><span class="pill">{len(history)} saved in this browser</span></div>'
                  f'<div class="num lg" style="margin-top:8px">{esc(last.get("goal", "Goal"))}: {esc(last.get("expected", "—"))}</div>'
                  f'<div class="cap">expected at your last check-in ({esc(last.get("month", ""))}), saving {inr(num(last, "monthly"))}/month {"at current pace, no growth" if last.get("pace_only") else "in the " + esc(last.get("mix", "")) + " mix"}</div>'
-                 f'<div class="hair"></div>{rows}')
+                 f'<div class="hair"></div>{rows}', "card checkins")
             st.button("Clear history from this browser", on_click=wipe_history, key="wipe", type="tertiary")
         else:
             sample_pill = "" if S.get("is_fresh") else '<span class="pill gold">Sample</span>'
