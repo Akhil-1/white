@@ -1,4 +1,4 @@
-# Start here: running White. on a new computer
+# Start here: running White on a new computer
 
 There are two ways. **Option A needs nothing installed**: you only need a browser. Option B runs the app on your own laptop.
 
@@ -11,7 +11,7 @@ You need: a GitHub account (free) and a Google account (for the Gemini key).
 **1. Create the GitHub repo**
 1. Go to github.com and sign up or sign in.
 2. Click **+** (top right) → **New repository**.
-3. Name it `white-app`, choose **Public**, tick **Add a README file**, then click **Create repository**.
+3. Name it `white` (ours is github.com/Akhil-1/white), choose **Public**, tick **Add a README file**, then click **Create repository**.
 
 **2. Upload the app files**
 1. Unzip `white-app-final.zip` on your computer.
@@ -36,8 +36,8 @@ You need: a GitHub account (free) and a Google account (for the Gemini key).
 **4. Deploy on Streamlit Community Cloud**
 1. Go to share.streamlit.io and click **Continue with GitHub**. Allow access.
 2. Click **Create app** → **Deploy a public app from GitHub**.
-3. Repository: `your-username/white-app` · Branch: `main` · Main file path: `app.py`.
-4. Optional: choose an App URL, e.g. `white-dpm-gr9`.
+3. Repository: `Akhil-1/white` · Branch: `main` · Main file path: `app.py`.
+4. Optional: choose an App URL. Ours is `white-dpm` (https://white-dpm.streamlit.app).
 5. Click **Advanced settings**. In **Secrets**, paste the line below with your key:
    ```
    GEMINI_API_KEY = "paste-your-key-here"
@@ -48,7 +48,7 @@ You need: a GitHub account (free) and a Google account (for the Gemini key).
 
 **If something goes wrong**
 - *"AI unavailable" on the cards:* the key is missing or wrong. Fix it in Streamlit → your app → **⋮ → Settings → Secrets**. The app still works without AI.
-- *"Model not found":* add a second line to Secrets: `GEMINI_MODEL = "gemini-2.5-flash"`.
+- *"Model not available":* remove any `GEMINI_MODEL` line from Secrets; the key alone is enough.
 - *"ModuleNotFoundError":* `requirements.txt` was not uploaded. Upload it, and the app rebuilds.
 
 ---

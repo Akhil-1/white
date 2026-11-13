@@ -34,4 +34,4 @@ So the file always: (1) styles the page, (2) reads the current inputs, (3) recal
 - Edit the rules in `SYSTEM_PROMPT` (section 4) and see how the explanation changes.
 - Change sample numbers in `DEFAULTS` (section 3) to match your persona.
 - Change the colours in `:root` (section 1) or in `.streamlit/config.toml`; the brand accent is `#14213D`, gold `#B8862B` is reserved for the AI card.
-- If Gemini says the model is not found, set `GEMINI_MODEL = "gemini-2.5-flash"` (or a current model name from aistudio.google.com) in secrets.
+- The app tries `gemini-flash-latest` (or `GEMINI_MODEL` if set), then other current Flash models, before falling back to the rule-based sentence. The card footer names the reason, e.g. an invalid key or a used-up quota.

@@ -940,7 +940,7 @@ def get_secret(name, default=None):
         return default
 
 
-APP_BUILD = "13 Nov · build 12"
+APP_BUILD = "13 Nov · build 13"
 FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 
 
@@ -1079,7 +1079,8 @@ def explain(task, facts, fallback_text, title):
                   on_click=lambda t=title: S.__setitem__("ai_go_" + t, True),
                   help="Asks Gemini again with the new numbers. Saves calls while you are still adjusting.")
     with st.expander("What's sent to the AI"):
-        st.caption("Only these summary numbers. No names, account numbers or transactions. Nothing is stored.")
+        st.caption("Only these summary figures. No names, account numbers or transactions. White doesn't save them; "
+                   "Google's Gemini terms apply to what it receives.")
         st.code(facts_json, language="json")
         if source.startswith("AI unavailable") and S.get("ai_diag"):
             st.caption("Connection details (for fixing the key; the key itself is never shown)")
@@ -1617,6 +1618,8 @@ if S.step == 0:
             sample_pill = "" if S.get("is_fresh") else '<span class="pill gold">Sample</span>'
             card(f'<div class="row"><span class="k">Free to use this month</span>{sample_pill}</div>'
                  f'<div class="num xl" style="margin-top:8px">{inr(free)}</div>'
+                 f'<div style="color:#C9D3EA;font-size:14px;margin-top:2px">before goal saving · {inr(free - total_goal_monthly)} '
+                 f'left after {inr(total_goal_monthly)} for goals</div>'
                  + bar3(committed, S.usual, max(free, 0), SPLIT_HERO, "20px 0 12px") +
                  f'<div class="legend"><span><i style="background:{SPLIT_HERO[0]}"></i>Fixed expenses <b>{inr(committed)}</b></span>'
                  f'<span><i style="background:{SPLIT_HERO[1]}"></i>Daily spending <b>{inr(S.usual)}</b></span>'
@@ -1976,7 +1979,7 @@ elif S.step == 3:
                          "equity is common; a heavy equity share can still be down when you need it. Balanced fits this timeline."),
               "long": (f"<b>Your goal is {goal_months} months away: a long goal.</b> Over 5 years, equity has time to recover "
                        "from bad years, so Growth fits if you are comfortable with the swings.")}[horizon_band]
-    st.markdown(f'<div class="note-inline">{H_NOTE} <span class="cap">A common rule of thumb, not advice. White never invests '
+    st.markdown(f'<div class="note-inline">{H_NOTE} <span class="cap">A common rule of thumb, shown for illustration; not personalised investment advice. White never invests '
                 f'or moves money; you invest through your own bank or fund app.</span></div>', unsafe_allow_html=True)
     stats = {n: mix_stats(n) for n in MIXES}
     left, right = st.columns([1.3, 1], gap="large")
@@ -2031,7 +2034,7 @@ elif S.step == 3:
             st.markdown(
                 f'<div class="opt{" sel" if sel else ""}" style="border-top-color:{MIX_COLOR[n]}">'
                 f'<div class="name"><i style="background:{MIX_COLOR[n]}"></i>{n}'
-                + ('<span class="pill navy" style="margin-left:auto;font-size:11px">Best fit</span>' if n == suggested else '') + '</div>'
+                + ('<span class="pill navy" style="margin-left:auto;font-size:11px">Timeline match</span>' if n == suggested else '') + '</div>'
                 + bar3(s["debt"], s["equity"], s["gold"], ALLOC, "14px 0 8px") +
                 f'<div class="cap">Debt {s["debt"]} · Equity {s["equity"]} · Gold {s["gold"]}</div>'
                 f'<div style="margin-top:10px"><div class="kv"><span>Expected</span><b>{s["goal_date"]} '
@@ -2326,7 +2329,7 @@ elif S.step == 4:
     ics = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//White//DPM2026 Gr09//EN\r\nBEGIN:VEVENT\r\n"
            f"UID:white-{S.salary_day}-{TODAY.isoformat()}@white.app\r\nDTSTAMP:{TODAY.strftime('%Y%m%d')}T000000Z\r\n"
            f"DTSTART;VALUE=DATE:{next_salary.strftime('%Y%m%d')}\r\nRRULE:FREQ=MONTHLY;BYMONTHDAY={min(S.salary_day, 28)}\r\n"
-           "SUMMARY:White. salary-day check-in (10 min)\r\n"
+           "SUMMARY:White salary-day check-in (10 min)\r\n"
            f"DESCRIPTION:Before the money moves: {GOAL_NAME.replace(',', ' ').replace(';', ' ')} needs {inr(monthly_needed(S.goal_saved, S.goal_cost, 0, months_between(TODAY, S.goal_date))).replace('₹', 'Rs ')} a month to be on time.\r\n"
            "BEGIN:VALARM\r\nTRIGGER:PT9H\r\nACTION:DISPLAY\r\nDESCRIPTION:Salary-day check-in\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
     st.download_button("Remind me every salary day", ics, file_name="white-salary-day.ics", mime="text/calendar",
