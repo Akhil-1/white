@@ -649,6 +649,15 @@ S = st.session_state
 GOAL_KEYS = ["goal_type", "goal_name", "goal_cost", "goal_date", "goal_saved", "goal_monthly"]
 SAMPLE_TRIP = {"goal_type": "Trip", "goal_name": "Europe trip", "goal_cost": 300000,
                "goal_date": add_months(TODAY, 48), "goal_saved": 25000, "goal_monthly": 5000}
+BLANK_GOAL = {"goal_type": "Other", "goal_name": "", "goal_cost": 0, "goal_date": add_months(TODAY, 24),
+              "goal_saved": 0, "goal_monthly": 0}
+if not S.get("inited"):                             # first visit in this session: start clean, not with the sample
+    S.inited = True
+    for _k in ["salary", "rent", "emi", "sip", "bills", "usual", "savings", "invest", "loans", "cards"]:
+        S[_k] = 0
+    for _k, _v in BLANK_GOAL.items():
+        S[_k] = _v
+    S.goals, S.gi, S.is_fresh = [dict(BLANK_GOAL)], 0, True
 if not S.goals:
     S.goals = [{k: S[k] for k in GOAL_KEYS}] + ([] if S.get("is_fresh") else [dict(SAMPLE_TRIP)])
 S.gi = min(S.gi, len(S.goals) - 1)
@@ -800,6 +809,18 @@ def clear_goals():
     """Start again with one blank goal; the user fills it in on 'Set a goal'."""
     _reset_goals_and_saved()
     go(2)
+
+
+def load_sample():
+    """'Try with sample numbers': Meera's numbers, a car and a Europe trip, so the app can be seen in a minute."""
+    for k, v in DEFAULTS.items():
+        if k in INPUT_KEYS or k in NUM_KEYS:
+            S[k] = v
+    S.goals = [{k: DEFAULTS[k] for k in GOAL_KEYS}, dict(SAMPLE_TRIP)]
+    S.gi, S.is_fresh, S.choice, S.tune_mix = 0, False, None, None
+    S.paid, S.moves, S.synced_month = {}, {}, True
+    for k in [k for k in S.keys() if str(k).startswith(("gval", "lump"))]:
+        del S[k]
 
 
 def start_fresh():
@@ -992,7 +1013,7 @@ def get_secret(name, default=None):
         return default
 
 
-APP_BUILD = "14 Nov · build 27"
+APP_BUILD = "14 Nov · build 29"
 FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 
 
@@ -1836,8 +1857,12 @@ if S.step == 0:
             b2.button("Start fresh", on_click=start_fresh, key="fresh", help=FRESH_HELP)
         else:
             b1, b2 = st.columns([1, 1.25])
-            b1.button("Start check-in", type="primary", on_click=go, args=(1,), key="start_ci")
-            b2.button("Start fresh with my numbers", on_click=start_fresh, key="fresh", help=FRESH_HELP)
+            b1.button("Start check-in" if S.salary > 0 else "Enter my numbers", type="primary", on_click=go, args=(1,), key="start_ci")
+            if S.salary > 0 and not S.get("is_fresh"):
+                b2.button("Start fresh with my numbers", on_click=start_fresh, key="fresh", help=FRESH_HELP)
+            else:
+                b2.button("Try with sample numbers", on_click=load_sample, key="sample",
+                          help="Loads an example: ₹1,45,000 take-home, a car and a Europe trip. Nothing is saved.")
         st.markdown(f'<div class="cap" style="margin-top:10px;display:flex;gap:8px;align-items:center">{icon(I_LOCK, "#8A8B92", 14)}'
                     'No bank login · no SMS reading · nothing on our servers</div>', unsafe_allow_html=True)
         # this month at a glance: three numbers people act on
@@ -1845,108 +1870,129 @@ if S.step == 0:
         glance = [("Everyday budget", f"{inr(daily_spend)}<span class='u'>/day</span>", f"till {next_salary.strftime('%d %b')}"),
                   ("Emergency buffer", f"{buffer_months:.1f}<span class='u'> months</span>", "aim for 3–6"),
                   ("Next salary", next_salary.strftime("%d %b"), f"in {days_left} days")]
-        st.markdown('<div class="glance">' + "".join(
-            f'<div class="card mini"><div class="k">{k}</div><div class="num md">{v}</div><div class="cap">{c}</div></div>'
-            for k, v, c in glance) + '</div>', unsafe_allow_html=True)
+        if S.salary > 0:                                   # nothing to show until there are numbers
+            st.markdown('<div class="glance">' + "".join(
+                f'<div class="card mini"><div class="k">{k}</div><div class="num md">{v}</div><div class="cap">{c}</div></div>'
+                for k, v, c in glance) + '</div>', unsafe_allow_html=True)
     with right:
+      if S.salary <= 0:
+        card('<div class="k">How it works</div>'
+             '<div class="num lg" style="margin-top:8px">Four steps, ten minutes</div>'
+             '<div style="color:#C9D3EA;font-size:14.5px;line-height:1.7;margin-top:10px">'
+             '1 · Where I stand: salary, rent, EMIs, SIPs, bills<br>2 · Set a goal: what, how much, by when<br>'
+             '3 · Investment options: what each mix does to the date<br>4 · My plan: test a spend before you make it</div>'
+             '<div style="color:#C9D3EA;font-size:13px;margin-top:14px">Nothing is linked or saved on a server. '
+             'Want a quick look first? Try the sample numbers.</div>', "card hero")
+      else:
         # a small slider: free money first, then one card per goal (what is left after it), then past check-ins
-        sample_pill = "" if S.get("is_fresh") else '<span class="pill gold">Sample</span>'
-        slides = [(f'<div class="row"><span class="k">Free to use this month</span>{sample_pill}</div>'
-                   f'<div class="num xl" style="margin-top:8px">{inr(free)}</div>'
-                   f'<div style="color:#C9D3EA;font-size:14px;margin-top:2px">before goal saving · {inr(free - total_goal_monthly)} '
-                   f'left after {inr(total_goal_monthly)} for goals</div>'
-                   + bar3(committed, S.usual, max(free, 0), SPLIT_HERO, "20px 0 12px") +
-                   f'<div class="legend"><span><i style="background:{SPLIT_HERO[0]}"></i>Fixed expenses <b>{inr(committed)}</b></span>'
-                   f'<span><i style="background:{SPLIT_HERO[1]}"></i>Daily spending <b>{inr(S.usual)}</b></span>'
-                   f'<span><i style="background:{SPLIT_HERO[2]}"></i>Free <b>{inr(free)}</b></span></div>', "card hero", "")]
-        HERO_TONES = [("#2453B8", "#1C3F8F"), ("#0F766E", "#0B5B55"), ("#6D4FC2", "#553BA3"), ("#C2560C", "#9C430A"),
-                      ("#9D2B5B", "#7E2148"), ("#0E7490", "#0B5C73"), ("#4D7C0F", "#3B600B"), ("#B45309", "#8F4207")]
-        live_goals = [g for g in S.goals if (g.get("goal_cost") or 0) > 0]
-        run_left = free
-        for j, g in enumerate(live_goals):
-            m_, cost_, saved_ = g["goal_monthly"] or 0, g["goal_cost"] or 1, g["goal_saved"] or 0
-            run_left -= m_
-            nm_ = esc((g["goal_name"] or "").strip() or "Your goal")
-            gm_ = max(1, months_between(TODAY, g["goal_date"]))
-            n_ = months_to_goal(saved_, m_, cost_, 0)
-            late_ = None if n_ is None else n_ - gm_
-            status_ = ("on time" if late_ is not None and late_ <= 0 else
-                       ("not reached at this pace" if late_ is None else f"{late_} month{'s' if late_ != 1 else ''} late"))
-            pct_ = min(100, saved_ / cost_ * 100)
-            c1_, c2_ = HERO_TONES[j % len(HERO_TONES)]
-            slides.append((
-                f'<div class="row"><span class="k">Goal {j + 1} of {len(live_goals)} · {nm_}</span><span class="pill">{status_}</span></div>'
-                f'<div class="num xl" style="margin-top:8px">{inr(run_left)}</div>'
-                f'<div style="color:rgba(255,255,255,.82);font-size:14px;margin-top:2px">left free after {inr(m_)} for {nm_}'
-                + (' and the goal' + ('s' if j > 1 else '') + ' before it' if j else '') + '</div>'
-                f'<div style="height:10px;border-radius:6px;background:rgba(255,255,255,.22);margin:20px 0 12px">'
-                f'<div style="width:{pct_:.1f}%;height:100%;border-radius:6px;background:#F3E7C9"></div></div>'
-                f'<div class="legend"><span>Saved <b>{inr(saved_)}</b> of {inr(cost_)} ({pct_:.0f}%)</span>'
-                f'<span>At this pace <b>{fmt_month(add_months(TODAY, n_)) if n_ else "—"}</b></span>'
-                f'<span>Target <b>{fmt_month(g["goal_date"])}</b></span></div>',
-                "card hero", f"background:linear-gradient(135deg,{c1_} 0%,{c2_} 100%);border-color:{c2_}"))
-        if last:
-            # every goal as it stood at the last check-in, then the months before
-            lg_rows = []
-            for k_, g_ in enumerate(last.get("goals") or []):
-                c_, sv_, mo_ = g_.get("goal_cost") or 0, g_.get("goal_saved") or 0, g_.get("goal_monthly") or 0
-                if c_ <= 0:
-                    continue
-                nm_ = (g_.get("goal_name") or "").strip() or "Goal"
-                try:
-                    gd_ = dt.date.fromisoformat(g_["goal_date"]) if isinstance(g_.get("goal_date"), str) else g_.get("goal_date") or TODAY
-                except ValueError:
-                    gd_ = TODAY
-                mx_ = goal_mix({"goal_date": gd_}, nm_ == (S.goal_name or "").strip())
-                n_ = months_to_goal(sv_, mo_, c_, mix_rate(mx_))
-                ticked_ = (last.get("paid") or {}).get(nm_) == last.get("month")
-                lg_rows.append(f'<div class="hist"><span><b>{esc(nm_)}</b>{" ✓" if ticked_ else ""}</span>'
-                               f'<span><b>{short_inr(sv_)}</b> of {short_inr(c_)}</span>'
-                               f'<span>{mx_} <b>{fmt_month(add_months(TODAY, n_)) if n_ else "—"}</b></span></div>')
-            older = "".join(
-                f'<div class="hist"><span>{esc(h.get("month", ""))}</span><span>free <b>{inr(num(h, "free"))}</b></span>'
-                f'<span>buffer <b>{num(h, "buffer"):.1f} mo</b></span></div>'
-                for h in history[-4:-1][::-1])
-            slides.append((f'<div class="row"><span class="k">Your check-ins</span><span class="pill">{len(history)} saved in this browser</span></div>'
-                           f'<div class="num lg" style="margin-top:8px">Last check-in: {esc(last.get("month", ""))}</div>'
-                           f'<div class="cap">Each goal as you left it: saved so far, and when it lands in its mix. ✓ = put aside that month.</div>'
-                           f'<div class="hair"></div>{"".join(lg_rows) or "<div class=cap>No goals saved yet.</div>"}'
-                           + (f'<div class="cap" style="margin-top:10px">Earlier months</div>{older}' if older else ''),
-                           "card checkins", ""))
-        hero_slider(slides)
-        if last:
-            st.button("Clear history from this browser", on_click=wipe_history, key="wipe", type="tertiary")
-        # the decision moment, without the full check-in: "can I afford this?"
-        with st.container(key="quick"):
-            st.markdown('<div class="k">Thinking of buying something?</div>'
-                        '<div class="cap">See what it does before you spend. Rules only.</div>', unsafe_allow_html=True)
-            money("Amount (₹)", "quick_amt", 100000, 1000)
-            st.segmented_control("Paid from", ["Free money", "Goal money"], key="quick_src")
-            amt, src = S.quick_amt or 0, S.quick_src or "Free money"
-            if amt > 0 and S.goals:
-                g0 = S.goals[0] if S.gi >= len(S.goals) else S.goals[S.gi]
-                cost0, sv0, m0 = g0["goal_cost"] or 1, g0["goal_saved"] or 0, g0["goal_monthly"] or 0
-                nm0 = esc(g0["goal_name"] or "Your goal")
-                f_a = months_to_goal_f(sv0, m0, cost0, 0)
-                if src == "Free money":
-                    left_free = free - amt
-                    over_ = max(0, amt - max(free, 0))
-                    verdict = ("ok", "Fits this month's free money") if over_ == 0 else ("warn", f"{inr(over_)} more than your free money")
-                    body = (f'<div class="kv"><span>Free this month</span><b>{inr(free)} → {inr(max(left_free, 0))}</b></div>'
-                            + (f'<div class="kv"><span>From savings (buffer)</span><b>{inr(over_)} · {buffer_months:.1f} → '
-                               f'{max(0, S.savings - over_) / essential if essential else 0:.1f} mo</b></div>' if over_ else '')
-                            + f'<div class="kv"><span>{nm0} reached</span><b>{fmt_month(add_months(TODAY, math.ceil(f_a))) if f_a is not None else "—"} · unchanged</b></div>')
-                else:
-                    f_b = months_to_goal_f(sv0 - amt, m0, cost0, 0)      # comes out of this month's goal money
-                    verdict = shift_words(f_a, f_b)
-                    da = fmt_month(add_months(TODAY, math.ceil(f_a))) if f_a is not None else "—"
-                    db = fmt_month(add_months(TODAY, math.ceil(f_b))) if f_b is not None else "—"
-                    gm0 = max(1, months_between(TODAY, g0["goal_date"]))
-                    need_a, need_b = max(0, cost0 - sv0) / gm0, max(0, cost0 - sv0 + amt) / gm0
-                    body = (f'<div class="kv"><span>{nm0} reached</span><b>{da} → {db}</b></div>'
-                            f'<div class="kv"><span>To stay on time</span><b>{inr(need_a)} → {inr(need_b)}/month</b></div>'
-                            f'<div class="kv"><span>Free this month</span><b>{inr(free)} · unchanged</b></div>')
-                st.markdown(f'<div class="quick-out"><span class="pill {verdict[0]}">{verdict[1]}</span>{body}</div>', unsafe_allow_html=True)
+          _sample_goals = [{k: DEFAULTS[k] for k in GOAL_KEYS}, {k: SAMPLE_TRIP[k] for k in GOAL_KEYS}]
+          untouched = (not S.get("is_fresh") and not history
+                       and all(S[k] == DEFAULTS[k] for k in INPUT_KEYS if k in DEFAULTS and k not in GOAL_KEYS)
+                       and [{k: g.get(k) for k in GOAL_KEYS} for g in S.goals] == _sample_goals)
+          sample_pill = '<span class="pill gold">Sample</span>' if untouched else ""
+          GOAL_TINT = "#8FB4FF"
+          _parts = [(committed, SPLIT_HERO[0]), (S.usual, SPLIT_HERO[1]),
+                    (min(total_goal_monthly, max(free, 0)), GOAL_TINT), (max(free - total_goal_monthly, 0), SPLIT_HERO[2])]
+          _tot = max(sum(v for v, _ in _parts), 1)
+          split4 = ('<div class="split" style="margin:20px 0 12px">'
+                    + "".join(f'<span style="width:{max(v, 0) / _tot * 100:.1f}%;background:{c}"></span>' for v, c in _parts) + '</div>')
+          slides = [(f'<div class="row"><span class="k">Free to use this month</span>{sample_pill}</div>'
+                     f'<div class="num xl" style="margin-top:8px">{inr(free)}</div>'
+                     f'<div style="color:#C9D3EA;font-size:14px;margin-top:2px">before goal saving · {inr(free - total_goal_monthly)} '
+                     f'left after {inr(total_goal_monthly)} for goals</div>'
+                     + split4 +
+                     f'<div class="legend"><span><i style="background:{SPLIT_HERO[0]}"></i>Fixed <b>{inr(committed)}</b></span>'
+                     f'<span><i style="background:{SPLIT_HERO[1]}"></i>Daily <b>{inr(S.usual)}</b></span>'
+                     f'<span><i style="background:{GOAL_TINT}"></i>Goals <b>{inr(min(total_goal_monthly, max(free, 0)))}</b></span>'
+                     f'<span><i style="background:{SPLIT_HERO[2]}"></i>Left <b>{inr(max(free - total_goal_monthly, 0))}</b></span></div>', "card hero", "")]
+          HERO_TONES = [("#2453B8", "#1C3F8F"), ("#0F766E", "#0B5B55"), ("#6D4FC2", "#553BA3"), ("#C2560C", "#9C430A"),
+                        ("#9D2B5B", "#7E2148"), ("#0E7490", "#0B5C73"), ("#4D7C0F", "#3B600B"), ("#B45309", "#8F4207")]
+          live_goals = [g for g in S.goals if (g.get("goal_cost") or 0) > 0]
+          run_left = free
+          for j, g in enumerate(live_goals):
+              m_, cost_, saved_ = g["goal_monthly"] or 0, g["goal_cost"] or 1, g["goal_saved"] or 0
+              run_left -= m_
+              nm_ = esc((g["goal_name"] or "").strip() or "Your goal")
+              gm_ = max(1, months_between(TODAY, g["goal_date"]))
+              n_ = months_to_goal(saved_, m_, cost_, 0)
+              late_ = None if n_ is None else n_ - gm_
+              status_ = ("on time" if late_ is not None and late_ <= 0 else
+                         ("not reached at this pace" if late_ is None else f"{late_} month{'s' if late_ != 1 else ''} late"))
+              pct_ = min(100, saved_ / cost_ * 100)
+              c1_, c2_ = HERO_TONES[j % len(HERO_TONES)]
+              slides.append((
+                  f'<div class="row"><span class="k">Goal {j + 1} of {len(live_goals)} · {nm_}</span><span class="pill">{status_}</span></div>'
+                  f'<div class="num xl" style="margin-top:8px">{inr(run_left)}</div>'
+                  f'<div style="color:rgba(255,255,255,.82);font-size:14px;margin-top:2px">left free after {inr(m_)} for {nm_}'
+                  + (' and the goal' + ('s' if j > 1 else '') + ' before it' if j else '') + '</div>'
+                  f'<div style="height:10px;border-radius:6px;background:rgba(255,255,255,.22);margin:20px 0 12px">'
+                  f'<div style="width:{pct_:.1f}%;height:100%;border-radius:6px;background:#F3E7C9"></div></div>'
+                  f'<div class="legend"><span>Saved <b>{inr(saved_)}</b> of {inr(cost_)} ({pct_:.0f}%)</span>'
+                  f'<span>At this pace <b>{fmt_month(add_months(TODAY, n_)) if n_ else "—"}</b></span>'
+                  f'<span>Target <b>{fmt_month(g["goal_date"])}</b></span></div>',
+                  "card hero", f"background:linear-gradient(135deg,{c1_} 0%,{c2_} 100%);border-color:{c2_}"))
+          if last:
+              # every goal as it stood at the last check-in, then the months before
+              lg_rows = []
+              for k_, g_ in enumerate(last.get("goals") or []):
+                  c_, sv_, mo_ = g_.get("goal_cost") or 0, g_.get("goal_saved") or 0, g_.get("goal_monthly") or 0
+                  if c_ <= 0:
+                      continue
+                  nm_ = (g_.get("goal_name") or "").strip() or "Goal"
+                  try:
+                      gd_ = dt.date.fromisoformat(g_["goal_date"]) if isinstance(g_.get("goal_date"), str) else g_.get("goal_date") or TODAY
+                  except ValueError:
+                      gd_ = TODAY
+                  mx_ = goal_mix({"goal_date": gd_}, nm_ == (S.goal_name or "").strip())
+                  n_ = months_to_goal(sv_, mo_, c_, mix_rate(mx_))
+                  ticked_ = (last.get("paid") or {}).get(nm_) == last.get("month")
+                  lg_rows.append(f'<div class="hist"><span><b>{esc(nm_)}</b>{" ✓" if ticked_ else ""}</span>'
+                                 f'<span><b>{short_inr(sv_)}</b> of {short_inr(c_)}</span>'
+                                 f'<span>{mx_} <b>{fmt_month(add_months(TODAY, n_)) if n_ else "—"}</b></span></div>')
+              older = "".join(
+                  f'<div class="hist"><span>{esc(h.get("month", ""))}</span><span>free <b>{inr(num(h, "free"))}</b></span>'
+                  f'<span>buffer <b>{num(h, "buffer"):.1f} mo</b></span></div>'
+                  for h in history[-4:-1][::-1])
+              slides.append((f'<div class="row"><span class="k">Your check-ins</span><span class="pill">{len(history)} saved in this browser</span></div>'
+                             f'<div class="num lg" style="margin-top:8px">Last check-in: {esc(last.get("month", ""))}</div>'
+                             f'<div class="cap">Each goal as you left it: saved so far, and when it lands in its mix. ✓ = put aside that month.</div>'
+                             f'<div class="hair"></div>{"".join(lg_rows) or "<div class=cap>No goals saved yet.</div>"}'
+                             + (f'<div class="cap" style="margin-top:10px">Earlier months</div>{older}' if older else ''),
+                             "card checkins", ""))
+          hero_slider(slides)
+          if last:
+              st.button("Clear history from this browser", on_click=wipe_history, key="wipe", type="tertiary")
+          # the decision moment, without the full check-in: "can I afford this?"
+          with st.container(key="quick"):
+              st.markdown('<div class="k">Thinking of buying something?</div>'
+                          '<div class="cap">See what it does before you spend. Rules only.</div>', unsafe_allow_html=True)
+              money("Amount (₹)", "quick_amt", 100000, 1000)
+              st.segmented_control("Paid from", ["Free money", "Goal money"], key="quick_src")
+              amt, src = S.quick_amt or 0, S.quick_src or "Free money"
+              if amt > 0 and S.goals:
+                  g0 = S.goals[0] if S.gi >= len(S.goals) else S.goals[S.gi]
+                  cost0, sv0, m0 = g0["goal_cost"] or 1, g0["goal_saved"] or 0, g0["goal_monthly"] or 0
+                  nm0 = esc(g0["goal_name"] or "Your goal")
+                  f_a = months_to_goal_f(sv0, m0, cost0, 0)
+                  if src == "Free money":
+                      left_free = free - amt
+                      over_ = max(0, amt - max(free, 0))
+                      verdict = ("ok", "Fits this month's free money") if over_ == 0 else ("warn", f"{inr(over_)} more than your free money")
+                      body = (f'<div class="kv"><span>Free this month</span><b>{inr(free)} → {inr(max(left_free, 0))}</b></div>'
+                              + (f'<div class="kv"><span>From savings (buffer)</span><b>{inr(over_)} · {buffer_months:.1f} → '
+                                 f'{max(0, S.savings - over_) / essential if essential else 0:.1f} mo</b></div>' if over_ else '')
+                              + f'<div class="kv"><span>{nm0} reached</span><b>{fmt_month(add_months(TODAY, math.ceil(f_a))) if f_a is not None else "—"} · unchanged</b></div>')
+                  else:
+                      f_b = months_to_goal_f(sv0 - amt, m0, cost0, 0)      # comes out of this month's goal money
+                      verdict = shift_words(f_a, f_b)
+                      da = fmt_month(add_months(TODAY, math.ceil(f_a))) if f_a is not None else "—"
+                      db = fmt_month(add_months(TODAY, math.ceil(f_b))) if f_b is not None else "—"
+                      gm0 = max(1, months_between(TODAY, g0["goal_date"]))
+                      need_a, need_b = max(0, cost0 - sv0) / gm0, max(0, cost0 - sv0 + amt) / gm0
+                      body = (f'<div class="kv"><span>{nm0} reached</span><b>{da} → {db}</b></div>'
+                              f'<div class="kv"><span>To stay on time</span><b>{inr(need_a)} → {inr(need_b)}/month</b></div>'
+                              f'<div class="kv"><span>Free this month</span><b>{inr(free)} · unchanged</b></div>')
+                  st.markdown(f'<div class="quick-out"><span class="pill {verdict[0]}">{verdict[1]}</span>{body}</div>', unsafe_allow_html=True)
 
     # ── salary-day goal tracker: how close each goal is, and what today's salary changes
     this_month = TODAY.strftime("%b %Y")
@@ -2086,28 +2132,30 @@ if S.step == 0:
 
     # ── payday runway: the month, day by day
     last_salary = add_months(next_salary, -1)
-    cycle = max(1, (next_salary - last_salary).days)
-    events = [("Rent", S.rent, S.rent_day), ("EMIs", S.emi, S.emi_day), ("SIPs", S.sip, S.sip_day), ("Bills", S.bills, S.bills_day)]
-    df_r, marks_r = runway(last_salary, next_salary, S.salary, [e for e in events if e[1]], S.usual / cycle, total_goal_monthly)
-    lo_r = df_r.loc[df_r["v"].idxmin()]
-    now_left = float(df_r.loc[df_r["d"] <= pd.Timestamp(TODAY), "v"].iloc[-1]) if (df_r["d"] <= pd.Timestamp(TODAY)).any() else float(df_r["v"].iloc[0])
-    spare_day = max(0.0, float(df_r["v"].iloc[-1])) / max(1, (next_salary - TODAY).days)
-    st.markdown('<div class="row" style="margin:26px 0 4px;align-items:flex-end;flex-wrap:wrap;gap:4px 16px"><div><div class="k">Payday runway</div>'
-                f'<div class="cap">Salary in on {last_salary.strftime("%d %b")}, goal money out first, bills on their days, daily spending spread evenly. Rules only.</div></div>'
-                f'<span class="cap">Next salary {next_salary.strftime("%d %b")}</span></div>', unsafe_allow_html=True)
-    rc1, rc2 = st.columns([2.2, 1], gap="medium")
-    with rc1:
-        with st.container(border=True):
-            runway_chart(df_r, marks_r, TODAY)
-    with rc2:
-        tight_ok = lo_r["v"] >= 0
-        big = max([e for e in events if e[1]], key=lambda e: e[1], default=None)
-        card(f'<div class="k">Left today, on plan</div><div class="num md">{inr(now_left)}</div>'
-             f'<div class="hair"></div><div class="k">Biggest hit</div><div class="num md">'
-             f'{(big[0] + " " + inr(big[1])) if big else "—"}</div><div class="cap">{("on day " + str(big[2])) if big else ""}'
-             f'{" · you stay above zero all month" if tight_ok else " · you would run short before payday: move a bill date or spend less early"}</div>'
-             f'<div class="hair"></div><div class="k">Truly spare</div><div class="num md">{inr(spare_day)}<span class="u">/day</span></div>'
-             f'<div class="cap">after bills, goal money and usual spending, till {next_salary.strftime("%d %b")}</div>')
+    show_runway = S.salary > 0
+    if show_runway:
+        cycle = max(1, (next_salary - last_salary).days)
+        events = [("Rent", S.rent, S.rent_day), ("EMIs", S.emi, S.emi_day), ("SIPs", S.sip, S.sip_day), ("Bills", S.bills, S.bills_day)]
+        df_r, marks_r = runway(last_salary, next_salary, S.salary, [e for e in events if e[1]], S.usual / cycle, total_goal_monthly)
+        lo_r = df_r.loc[df_r["v"].idxmin()]
+        now_left = float(df_r.loc[df_r["d"] <= pd.Timestamp(TODAY), "v"].iloc[-1]) if (df_r["d"] <= pd.Timestamp(TODAY)).any() else float(df_r["v"].iloc[0])
+        spare_day = max(0.0, float(df_r["v"].iloc[-1])) / max(1, (next_salary - TODAY).days)
+        st.markdown('<div class="row" style="margin:26px 0 4px;align-items:flex-end;flex-wrap:wrap;gap:4px 16px"><div><div class="k">Payday runway</div>'
+                    f'<div class="cap">Salary in on {last_salary.strftime("%d %b")}, goal money out first, bills on their days, daily spending spread evenly. Rules only.</div></div>'
+                    f'<span class="cap">Next salary {next_salary.strftime("%d %b")}</span></div>', unsafe_allow_html=True)
+        rc1, rc2 = st.columns([2.2, 1], gap="medium")
+        with rc1:
+            with st.container(border=True):
+                runway_chart(df_r, marks_r, TODAY)
+        with rc2:
+            tight_ok = lo_r["v"] >= 0
+            big = max([e for e in events if e[1]], key=lambda e: e[1], default=None)
+            card(f'<div class="k">Left today, on plan</div><div class="num md">{inr(now_left)}</div>'
+                 f'<div class="hair"></div><div class="k">Biggest hit</div><div class="num md">'
+                 f'{(big[0] + " " + inr(big[1])) if big else "—"}</div><div class="cap">{("on day " + str(big[2])) if big else ""}'
+                 f'{" · you stay above zero all month" if tight_ok else " · you would run short before payday: move a bill date or spend less early"}</div>'
+                 f'<div class="hair"></div><div class="k">Truly spare</div><div class="num md">{inr(spare_day)}<span class="u">/day</span></div>'
+                 f'<div class="cap">after bills, goal money and usual spending, till {next_salary.strftime("%d %b")}</div>')
 
 
 # ═════════════════════════════════════════════════════════════
@@ -2145,7 +2193,7 @@ elif S.step == 1:
                     amount_box("Credit card dues (₹)", "cards", where=c2)
                     amount_box("Loans outstanding (₹)", "loans")
                 st.caption("Why we ask: savings set your emergency buffer (how long you could cope without salary); loans and dues give your net worth. A snapshot of today; FD and loan interest are not projected.")
-        if free <= 0:
+        if S.salary > 0 and free <= 0:
             st.error("Commitments and usual spending are more than your salary this month.")
         explain(
             "Explain this person's position this month in 2-3 sentences: what is free, how healthy the "
