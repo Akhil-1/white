@@ -63,6 +63,10 @@ h2 { font-size: 28px !important; margin: 0 0 2px !important; padding: 0 !importa
 p, li { color: var(--ink); }
 
 /* ── top bar: logo, step progress, AI toggle ───────────────────────── */
+.st-key-hero_nav { margin-top: -4px; }
+.st-key-hero_nav div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px; align-items: center; }
+.st-key-hero_nav div[data-testid="stColumn"] { min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
+.st-key-hero_nav div[data-testid="stColumn"]:nth-child(2) { flex: 1.4 1 0 !important; }
 div[data-testid="stHorizontalBlock"]:has(.topbar) { align-items: center; flex-wrap: nowrap !important; gap: 8px;
   padding: 10px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
 div[data-testid="stHorizontalBlock"]:has(.topbar) > div[data-testid="stColumn"] { min-width: 0 !important; }
@@ -119,6 +123,8 @@ div[data-testid="stHorizontalBlock"]:has(.topbar) > div[data-testid="stColumn"]:
 .hist:last-child { border-bottom:none; }
 .hist b { color: var(--ink); font-variant-numeric: tabular-nums; }
 @keyframes rise { from { opacity:0; transform: translateY(4px);} to { opacity:1; transform:none;} }
+@keyframes slidein { from { opacity:0; transform: translateX(28px);} to { opacity:1; transform:none;} }
+.card.slide-in { animation: slidein .45s cubic-bezier(.2,.7,.2,1) both; }
 @media (prefers-reduced-motion: reduce) { .card { animation: none; } }
 .k { font-size:14.5px; color: var(--ink-2); font-weight:600; }
 .cap { font-size:14px; color: var(--ink-3); line-height:1.5; }
@@ -562,16 +568,20 @@ def amount_box(label, key, where=None, help=None):
 
 
 def ring(frac, color, size=112, stroke=10, label="", sub=""):
-    """Full progress ring (SVG). frac 0..1; text in the middle."""
+    """Full progress ring (SVG). frac 0..1; text centred in the middle."""
     r = (size - stroke) / 2
     c = 2 * math.pi * r
     frac = max(0.0, min(1.0, frac))
-    return (f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" role="img" aria-label="{label} {sub}">'
-            f'<circle cx="{size/2}" cy="{size/2}" r="{r}" fill="none" stroke="#EEEEEA" stroke-width="{stroke}"/>'
-            f'<circle cx="{size/2}" cy="{size/2}" r="{r}" fill="none" stroke="{color}" stroke-width="{stroke}" stroke-linecap="round" '
-            f'stroke-dasharray="{frac*c:.1f} {c:.1f}" transform="rotate(-90 {size/2} {size/2})"/>'
-            f'<text x="50%" y="50%" dy="2" text-anchor="middle" dominant-baseline="middle" class="mid">{label}</text>'
-            f'<text x="50%" y="50%" dy="20" text-anchor="middle" class="sub">{sub}</text></svg>')
+    mid, fs1, fs2 = size / 2, round(size * 0.25), round(size * 0.135)
+    arc = (f'<circle cx="{mid}" cy="{mid}" r="{r}" fill="none" stroke="{color}" stroke-width="{stroke}" stroke-linecap="round" '
+           f'stroke-dasharray="{frac*c:.1f} {c:.1f}" transform="rotate(-90 {mid} {mid})"/>') if frac >= 0.01 else ''
+    return (f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" role="img" aria-label="{label} {sub}" '
+            f'shape-rendering="geometricPrecision" style="flex:0 0 auto">'
+            f'<circle cx="{mid}" cy="{mid}" r="{r}" fill="none" stroke="#EEEEEA" stroke-width="{stroke}"/>{arc}'
+            f'<text x="{mid}" y="{mid - size * 0.06:.1f}" text-anchor="middle" dominant-baseline="central" '
+            f'style="font-family:var(--display);font-weight:700;font-size:{fs1}px;letter-spacing:-.5px;fill:#111114">{label}</text>'
+            f'<text x="{mid}" y="{mid + size * 0.17:.1f}" text-anchor="middle" dominant-baseline="central" '
+            f'style="font-size:{fs2}px;font-weight:600;fill:#8A8B92">{sub}</text></svg>')
 
 
 def gauge(value, max_value, marker, color, size=128, stroke=11, label="", sub=""):
@@ -631,8 +641,10 @@ S = st.session_state
 
 # ── several goals: the active one lives in the goal_* keys; all of them live in S.goals
 GOAL_KEYS = ["goal_type", "goal_name", "goal_cost", "goal_date", "goal_saved", "goal_monthly"]
+SAMPLE_TRIP = {"goal_type": "Trip", "goal_name": "Europe trip", "goal_cost": 300000,
+               "goal_date": add_months(TODAY, 48), "goal_saved": 25000, "goal_monthly": 5000}
 if not S.goals:
-    S.goals = [{k: S[k] for k in GOAL_KEYS}]
+    S.goals = [{k: S[k] for k in GOAL_KEYS}] + ([] if S.get("is_fresh") else [dict(SAMPLE_TRIP)])
 S.gi = min(S.gi, len(S.goals) - 1)
 S.goals[S.gi] = {k: S[k] for k in GOAL_KEYS}
 GOAL_NAME = (S.goal_name or "").strip() or "Your goal"           # what sentences show when the name is blank
@@ -790,6 +802,40 @@ def start_fresh():
     go(1)
 
 
+HERO_EVERY_S, HERO_PAUSE_S = 5, 15     # auto-advance every 5 s; a tap on Back/Next pauses it for 15 s
+
+
+def _hero_tap(delta, n):
+    S["hero_i"] = (S.get("hero_i", 0) + delta) % n
+    S["hero_tap"] = S["hero_t"] = time.time()
+
+
+@st.fragment(run_every=HERO_EVERY_S)
+def hero_slider(slides):
+    """Home's top-right card: slides on its own every few seconds; only this part of the page refreshes."""
+    n = len(slides)
+    now = time.time()
+    S["hero_i"] = S.get("hero_i", 0) % n
+    S.setdefault("hero_t", now)
+    if n > 1 and now - S["hero_t"] >= HERO_EVERY_S - 0.5 and now - S.get("hero_tap", 0) >= HERO_PAUSE_S:
+        S["hero_i"] = (S["hero_i"] + 1) % n
+        S["hero_t"] = now
+    i = S["hero_i"]
+    h_, cls_, sty_ = slides[i]
+    with st.container(key=f"hero_slide_{i}"):              # a new key per slide replays the slide-in animation
+        st.markdown(f'<div class="{cls_} slide-in" style="min-height:262px;{sty_}">{h_}</div>', unsafe_allow_html=True)
+    if n > 1:
+        with st.container(key="hero_nav"):
+            p_, d_, n_ = st.columns([1, 2.2, 1], vertical_alignment="center")
+            p_.button("← Back", key="hero_prev", width="stretch", on_click=_hero_tap, args=(-1, n))
+            d_.markdown('<div style="text-align:center;font-size:13px;color:#8A8B92">'
+                        + " ".join('<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 3px;'
+                                   'transition:background .3s;background:' + ('#14213D' if k == i else '#D5D8DE') + '"></span>'
+                                   for k in range(n))
+                        + f'<br>{i + 1} of {n}</div>', unsafe_allow_html=True)
+            n_.button("Next →", key="hero_next", width="stretch", type="primary", on_click=_hero_tap, args=(1, n))
+
+
 def go(step):
     """Buttons call this. Keeps the step tabs in sync."""
     if S.get("plan_pick") and S.get("plan_base"):
@@ -940,7 +986,7 @@ def get_secret(name, default=None):
         return default
 
 
-APP_BUILD = "13 Nov · build 15"
+APP_BUILD = "14 Nov · build 24"
 FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 
 
@@ -952,29 +998,122 @@ def _model_unavailable(e):
                                                       "is not available", "permission_denied", "access"))
 
 
-def _generate(api_key, model, contents, system_prompt):
-    """Ask Gemini, trying the chosen model first and then current Flash models if Google rejects that model."""
+@st.cache_resource(show_spinner=False)
+def _client(api_key):
+    """One Gemini client per key, reused across calls (saves a connection set-up each time)."""
     from google import genai
+    return genai.Client(api_key=api_key)
+
+
+_THINK_OK = {}      # model -> index of the thinking setting that model accepted
+
+
+def _configs(system_prompt):
+    """Fastest first: minimal thinking (Gemini 3), thinking off (Gemini 2.5), then the model's default."""
     from google.genai import types
-    client = genai.Client(api_key=api_key)
-    tried, last = [], None
+    base = dict(system_instruction=system_prompt, temperature=0.4, max_output_tokens=800)
+    return [types.GenerateContentConfig(**base, thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL)),
+            types.GenerateContentConfig(**base, thinking_config=types.ThinkingConfig(thinking_budget=0)),
+            types.GenerateContentConfig(**base)]
+
+
+def _thinking_rejected(e):
+    t = str(e).lower()
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+    return (code == 400 or "invalid_argument" in t) and "think" in t
+
+
+def _attempts(model, system_prompt):
+    """(model, config index, config) in the order to try: the chosen model first, then current Flash models."""
+    cfgs, seen = _configs(system_prompt), []
     for m in (model, *FALLBACK_MODELS):
-        if not m or m in tried:
+        if not m or m in seen:
             continue
-        tried.append(m)
-        try:
-            r = client.models.generate_content(model=m, contents=contents,
-                                               config=types.GenerateContentConfig(system_instruction=system_prompt, temperature=0.4))
-            return (r.text or "").strip()
-        except Exception as e:
-            last = e
+        seen.append(m)
+        order = [_THINK_OK[m]] if m in _THINK_OK else [0, 1, 2]
+        yield m, order, cfgs, seen
+
+
+def _run(api_key, model, contents, system_prompt, stream):
+    """Call Gemini with fallbacks. stream=True returns an iterator of text pieces (first piece already fetched)."""
+    client, last = _client(api_key), None
+    for m, order, cfgs, seen in _attempts(model, system_prompt):
+        for ci in order:
             try:
-                e.tried = list(tried)
-            except Exception:
-                pass
-            if not _model_unavailable(e) or "api_key_invalid" in str(e).lower() or "api key not valid" in str(e).lower():
-                raise
+                if stream:
+                    it = client.models.generate_content_stream(model=m, contents=contents, config=cfgs[ci])
+                    first = next(it)                              # errors about the model or settings show up here
+                    _THINK_OK[m] = ci
+
+                    def pieces(first=first, it=it):
+                        if first.text:
+                            yield first.text
+                        for ch in it:
+                            if ch.text:
+                                yield ch.text
+                    return pieces()
+                r = client.models.generate_content(model=m, contents=contents, config=cfgs[ci])
+                _THINK_OK[m] = ci
+                return (r.text or "").strip()
+            except StopIteration:
+                _THINK_OK[m] = ci
+                return iter(()) if stream else ""
+            except Exception as e:
+                last = e
+                try:
+                    e.tried = list(seen)
+                except Exception:
+                    pass
+                if _thinking_rejected(e):
+                    continue                                      # this model wants another thinking setting
+                if not _model_unavailable(e) or "api_key_invalid" in str(e).lower() or "api key not valid" in str(e).lower():
+                    raise
+                break                                             # this model is unavailable: try the next model
     raise last
+
+
+def _generate(api_key, model, contents, system_prompt):
+    """Ask Gemini and wait for the whole answer (used by Ask White)."""
+    return _run(api_key, model, contents, system_prompt, stream=False)
+
+
+# ── Protecting the Gemini key: nobody can use the app as a free general chatbot or burn the quota ──
+AI_DAILY_CAP = 500          # Gemini calls per day for the whole app, all visitors together
+AI_SESSION_CAP = 50         # Gemini calls per visitor session (explanations + questions)
+ASK_MAX_CHARS = 200         # longer questions are cut
+ASK_COOLDOWN_S = 4          # seconds between questions from one visitor
+ON_TOPIC = ("afford", "buy", "spend", "save", "saving", "goal", "car", "bike", "phone", "trip", "laptop", "house",
+            "home", "wedding", "gadget", "emi", "loan", "rent", "sip", "salary", "income", "invest", "mix", "steady",
+            "balanced", "growth", "equity", "debt", "gold", "fd", "fund", "buffer", "emergency", "month", "late",
+            "early", "date", "plan", "free", "money", "₹", "rs", "rupee", "lakh", "budget", "bonus", "need", "target",
+            "track", "risk", "market", "return", "interest", "card", "bill", "expense", "cost", "price", "pay",
+            "delay", "sooner", "faster", "behind", "ahead", "net worth", "white", "ai", "data", "privacy")
+
+
+@st.cache_resource(show_spinner=False)
+def _ai_meter():
+    """Shared by every visitor on this server: today's date and how many Gemini calls were made."""
+    return {"day": None, "n": 0}
+
+
+def ai_budget_ok():
+    """True if this visitor and the whole app are still within today's Gemini allowance."""
+    m = _ai_meter()
+    today = dt.date.today().isoformat()
+    if m["day"] != today:
+        m["day"], m["n"] = today, 0
+    return m["n"] < AI_DAILY_CAP and S.get("ai_calls", 0) < AI_SESSION_CAP
+
+
+def ai_count():
+    _ai_meter()["n"] += 1
+    S["ai_calls"] = S.get("ai_calls", 0) + 1
+
+
+def on_topic(q):
+    """A cheap local check: the question must be about money or this plan. '1+2' or a poem never reaches Gemini."""
+    ql = q.lower()
+    return "₹" in ql or bool(re.search(r"\b(" + "|".join(re.escape(w) for w in ON_TOPIC if w != "₹") + r")", ql))
 
 
 def ai_error(e):
@@ -1047,16 +1186,32 @@ def explain(task, facts, fallback_text, title):
     if S.use_ai and key:
         if prev and prev[0] == h:                              # same numbers as last time: reuse, no call
             text, source = prev[1], "Explained by Gemini · numbers calculated by the app"
+        elif S.get("ai_go_" + title) and not ai_budget_ok():   # daily or session allowance used up
+            S["ai_go_" + title] = False
+            source = "AI limit reached for today · showing calculations only"
         elif S.get("ai_go_" + title):                          # only when the user asks
             S["ai_go_" + title] = False
+            ai_count()
             try:
-                with st.spinner("Explaining…"):
-                    out = call_gemini(task, facts_json, key, get_secret("GEMINI_MODEL", "gemini-flash-latest"))
+                ph = st.empty()
+                ph.markdown(f'<div class="card ai"><div class="ai-head">{icon(I_SPARK, "#B8862B", 14)} {title}</div>'
+                            f'<p class="ai-text">▍</p><div class="ai-src">Asking Gemini…</div></div>', unsafe_allow_html=True)
+                out = ""
+                for piece in _run(key, get_secret("GEMINI_MODEL", "gemini-flash-latest"),
+                                  f"TASK: {task}\n\nFACTS (calculated by the app):\n{facts_json}", SYSTEM_PROMPT, stream=True):
+                    out += piece                                     # words appear as Gemini writes them
+                    ph.markdown(f'<div class="card ai"><div class="ai-head">{icon(I_SPARK, "#B8862B", 14)} {title}</div>'
+                                f'<p class="ai-text">{out}▍</p></div>', unsafe_allow_html=True)
+                ph.empty()
+                out = out.strip()
                 if out:
                     store[title] = (h, out)
                     text, source = out, "Explained by Gemini · numbers calculated by the app"
-                    typed = True
             except Exception as e:
+                try:
+                    ph.empty()
+                except Exception:
+                    pass
                 store[title] = (None, "")                      # don't retry on every change after a failure
                 source = f"AI unavailable ({ai_error(e)}) · showing calculations only"
                 S["ai_diag"] = (f"{type(e).__name__} {getattr(e, 'code', '') or ''} · models tried: "
@@ -1172,8 +1327,18 @@ def assistant(ctx, suggestions):
     """Ask White: a chat pinned to the corner of every screen, answering from this person's numbers."""
     def _ask(q):
         key = get_secret("GEMINI_API_KEY")
+        q = q[:ASK_MAX_CHARS]
+        if not on_topic(q):                                    # answered here, no Gemini call
+            S.assist.append((q, "I can only help with your money plan: what is free this month, your goals, the mixes, "
+                                "or what a purchase does to your goal. Try: Can I afford a ₹25,000 trip?", "White"))
+            S.assist_new = True
+            return
+        now_ = time.time()
+        wait_ = S.get("last_ask", 0) + ASK_COOLDOWN_S - now_
+        S["last_ask"] = now_
         base = rule_answer(q, ctx)
-        if S.use_ai and key:
+        if S.use_ai and key and wait_ <= 0 and ai_budget_ok():
+            ai_count()
             try:
                 facts = json.dumps({**{k: v for k, v in ctx.items() if k not in ("goal", "mix")},
                                     "goal": ctx["goal"], "mix": ctx["mix"], "calculated_answer": base}, ensure_ascii=False, default=str)
@@ -1202,7 +1367,7 @@ def assistant(ctx, suggestions):
                                 unsafe_allow_html=True)
             with st.form(f"assist_form{S.step}", clear_on_submit=True, border=False):
                 fa, fb = st.columns([4, 1], vertical_alignment="bottom")
-                q_ = fa.text_input("Ask", placeholder="e.g. Can I afford a ₹25,000 trip?", label_visibility="collapsed")
+                q_ = fa.text_input("Ask", placeholder="e.g. Can I afford a ₹25,000 trip?", label_visibility="collapsed", max_chars=ASK_MAX_CHARS)
                 if fb.form_submit_button("Ask", type="primary") and q_.strip():
                     _ask(q_.strip())
                     st.rerun()
@@ -1248,6 +1413,20 @@ _by_time = {"short": "Steady", "medium": "Balanced", "long": "Growth"}[horizon_b
 suggested = (_by_time if _ORDER.index(MIX_COMFORT[_by_time]) <= _ORDER.index(comfort)
              else ("Steady" if comfort == "Low" else "Balanced"))
 choice = S.choice if S.choice in MIXES else suggested
+
+
+def goal_mix(g, is_active):
+    """The mix a goal is shown with on Home: the one chosen in step 3 for the active goal, else its timeline match."""
+    if is_active and S.choice in MIXES:
+        return S.choice
+    gm_ = months_between(TODAY, g["goal_date"])
+    by_t = "Steady" if gm_ <= 36 else ("Balanced" if gm_ <= 60 else "Growth")
+    return by_t if _ORDER.index(MIX_COMFORT[by_t]) <= _ORDER.index(comfort) else ("Steady" if comfort == "Low" else "Balanced")
+
+
+def mix_rate(name):
+    d, e, g = MIXES[name]
+    return (d * S.r_debt + e * S.r_equity + g * S.r_gold) / 10000
 
 
 def mix_stats(name):
@@ -1604,26 +1783,54 @@ if S.step == 0:
             f'<div class="card mini"><div class="k">{k}</div><div class="num md">{v}</div><div class="cap">{c}</div></div>'
             for k, v, c in glance) + '</div>', unsafe_allow_html=True)
     with right:
+        # a small slider: free money first, then one card per goal (what is left after it), then past check-ins
+        sample_pill = "" if S.get("is_fresh") else '<span class="pill gold">Sample</span>'
+        slides = [(f'<div class="row"><span class="k">Free to use this month</span>{sample_pill}</div>'
+                   f'<div class="num xl" style="margin-top:8px">{inr(free)}</div>'
+                   f'<div style="color:#C9D3EA;font-size:14px;margin-top:2px">before goal saving · {inr(free - total_goal_monthly)} '
+                   f'left after {inr(total_goal_monthly)} for goals</div>'
+                   + bar3(committed, S.usual, max(free, 0), SPLIT_HERO, "20px 0 12px") +
+                   f'<div class="legend"><span><i style="background:{SPLIT_HERO[0]}"></i>Fixed expenses <b>{inr(committed)}</b></span>'
+                   f'<span><i style="background:{SPLIT_HERO[1]}"></i>Daily spending <b>{inr(S.usual)}</b></span>'
+                   f'<span><i style="background:{SPLIT_HERO[2]}"></i>Free <b>{inr(free)}</b></span></div>', "card hero", "")]
+        HERO_TONES = [("#2453B8", "#1C3F8F"), ("#0F766E", "#0B5B55"), ("#6D4FC2", "#553BA3"), ("#C2560C", "#9C430A"),
+                      ("#9D2B5B", "#7E2148"), ("#0E7490", "#0B5C73"), ("#4D7C0F", "#3B600B"), ("#B45309", "#8F4207")]
+        live_goals = [g for g in S.goals if (g.get("goal_cost") or 0) > 0]
+        run_left = free
+        for j, g in enumerate(live_goals):
+            m_, cost_, saved_ = g["goal_monthly"] or 0, g["goal_cost"] or 1, g["goal_saved"] or 0
+            run_left -= m_
+            nm_ = esc((g["goal_name"] or "").strip() or "Your goal")
+            gm_ = max(1, months_between(TODAY, g["goal_date"]))
+            n_ = months_to_goal(saved_, m_, cost_, 0)
+            late_ = None if n_ is None else n_ - gm_
+            status_ = ("on time" if late_ is not None and late_ <= 0 else
+                       ("not reached at this pace" if late_ is None else f"{late_} month{'s' if late_ != 1 else ''} late"))
+            pct_ = min(100, saved_ / cost_ * 100)
+            c1_, c2_ = HERO_TONES[j % len(HERO_TONES)]
+            slides.append((
+                f'<div class="row"><span class="k">Goal {j + 1} of {len(live_goals)} · {nm_}</span><span class="pill">{status_}</span></div>'
+                f'<div class="num xl" style="margin-top:8px">{inr(run_left)}</div>'
+                f'<div style="color:rgba(255,255,255,.82);font-size:14px;margin-top:2px">left free after {inr(m_)} for {nm_}'
+                + (' and the goal' + ('s' if j > 1 else '') + ' before it' if j else '') + '</div>'
+                f'<div style="height:10px;border-radius:6px;background:rgba(255,255,255,.22);margin:20px 0 12px">'
+                f'<div style="width:{pct_:.1f}%;height:100%;border-radius:6px;background:#F3E7C9"></div></div>'
+                f'<div class="legend"><span>Saved <b>{inr(saved_)}</b> of {inr(cost_)} ({pct_:.0f}%)</span>'
+                f'<span>At this pace <b>{fmt_month(add_months(TODAY, n_)) if n_ else "—"}</b></span>'
+                f'<span>Target <b>{fmt_month(g["goal_date"])}</b></span></div>',
+                "card hero", f"background:linear-gradient(135deg,{c1_} 0%,{c2_} 100%);border-color:{c2_}"))
         if last:
             rows = "".join(
                 f'<div class="hist"><span>{esc(h.get("month", ""))}</span><span>free <b>{inr(num(h, "free"))}</b></span>'
                 f'<span>buffer <b>{num(h, "buffer"):.1f} mo</b></span><span>{esc(h.get("goal", ""))} <b>{esc(h.get("expected", "—"))}</b></span></div>'
                 for h in history[-4:][::-1])
-            card(f'<div class="row"><span class="k">Your check-ins</span><span class="pill">{len(history)} saved in this browser</span></div>'
-                 f'<div class="num lg" style="margin-top:8px">{esc(last.get("goal", "Goal"))}: {esc(last.get("expected", "—"))}</div>'
-                 f'<div class="cap">expected at your last check-in ({esc(last.get("month", ""))}), saving {inr(num(last, "monthly"))}/month {"at current pace, no growth" if last.get("pace_only") else "in the " + esc(last.get("mix", "")) + " mix"}</div>'
-                 f'<div class="hair"></div>{rows}', "card checkins")
+            slides.append((f'<div class="row"><span class="k">Your check-ins</span><span class="pill">{len(history)} saved in this browser</span></div>'
+                           f'<div class="num lg" style="margin-top:8px">{esc(last.get("goal", "Goal"))}: {esc(last.get("expected", "—"))}</div>'
+                           f'<div class="cap">expected at your last check-in ({esc(last.get("month", ""))}), saving {inr(num(last, "monthly"))}/month {"at current pace, no growth" if last.get("pace_only") else "in the " + esc(last.get("mix", "")) + " mix"}</div>'
+                           f'<div class="hair"></div>{rows}', "card checkins", ""))
+        hero_slider(slides)
+        if last:
             st.button("Clear history from this browser", on_click=wipe_history, key="wipe", type="tertiary")
-        else:
-            sample_pill = "" if S.get("is_fresh") else '<span class="pill gold">Sample</span>'
-            card(f'<div class="row"><span class="k">Free to use this month</span>{sample_pill}</div>'
-                 f'<div class="num xl" style="margin-top:8px">{inr(free)}</div>'
-                 f'<div style="color:#C9D3EA;font-size:14px;margin-top:2px">before goal saving · {inr(free - total_goal_monthly)} '
-                 f'left after {inr(total_goal_monthly)} for goals</div>'
-                 + bar3(committed, S.usual, max(free, 0), SPLIT_HERO, "20px 0 12px") +
-                 f'<div class="legend"><span><i style="background:{SPLIT_HERO[0]}"></i>Fixed expenses <b>{inr(committed)}</b></span>'
-                 f'<span><i style="background:{SPLIT_HERO[1]}"></i>Daily spending <b>{inr(S.usual)}</b></span>'
-                 f'<span><i style="background:{SPLIT_HERO[2]}"></i>Free <b>{inr(free)}</b></span></div>', "card hero")
         # the decision moment, without the full check-in: "can I afford this?"
         with st.container(key="quick"):
             st.markdown('<div class="k">Thinking of buying something?</div>'
@@ -1679,16 +1886,22 @@ if S.step == 0:
         after = saved if done else min(cost, saved + monthly)
         pct, pct_after = saved / cost * 100, after / cost * 100
         pace_d = "not reached at this pace" if n_pace is None else fmt_month(add_months(TODAY, n_pace))
+        gmix = goal_mix(g, gi_ == S.gi)
+        n_mix = months_to_goal(saved, monthly, cost, mix_rate(gmix))
+        gmix_d = "not reached" if n_mix is None else fmt_month(add_months(TODAY, n_mix))
+        gmix_ok = n_mix is not None and n_mix <= gm
         # sparkline: balance at your pace vs the straight line that lands on time
         N = max(gm, min(n_pace or gm * 2, 240))
         X = lambda m: m / N * 300
         Y = lambda v: 82 - min(v, cost) / cost * 74
         pace_pts = " ".join(f"{X(m):.1f},{Y(saved + monthly * m):.1f}" for m in range(0, N + 1, max(1, N // 40)))
-        spark = (f'<svg class="spark" viewBox="0 0 300 86" preserveAspectRatio="none" aria-label="Savings path for {esc(g["goal_name"])}">'
+        area_pts = f"0,86 {pace_pts} {X(N):.1f},86"
+        spark = (f'<svg class="spark" viewBox="0 0 300 86" preserveAspectRatio="none" shape-rendering="geometricPrecision" aria-label="Savings path for {esc(g["goal_name"])}">'
+                 f'<polygon points="{area_pts}" fill="rgba(20,33,61,.07)" stroke="none"/>'
                  f'<line x1="0" y1="8" x2="300" y2="8" stroke="#B8862B" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>'
                  f'<line x1="{X(gm):.1f}" y1="4" x2="{X(gm):.1f}" y2="84" stroke="#B9B9B4" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>'
-                 f'<line x1="0" y1="{Y(saved):.1f}" x2="{X(gm):.1f}" y2="8" stroke="#199e70" stroke-width="2" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>'
-                 f'<polyline points="{pace_pts}" fill="none" stroke="#14213D" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>'
+                 f'<line x1="0" y1="{Y(saved):.1f}" x2="{X(gm):.1f}" y2="8" stroke="#199e70" stroke-width="2" stroke-dasharray="6 4" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+                 f'<polyline points="{pace_pts}" fill="none" stroke="#14213D" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>'
                  f'<div class="cap" style="display:flex;justify-content:space-between"><span>Now</span><span>{fmt_month(g["goal_date"])}</span></div>'
                  f'<div class="cap" style="font-size:12px;white-space:nowrap"><b style="color:#14213D">—</b> your pace &nbsp; <b style="color:#199e70">- -</b> on time &nbsp; '
                  f'<b style="color:#B8862B">- -</b> goal</div>')
@@ -1706,11 +1919,12 @@ if S.step == 0:
             dv = mv[1] - mv[0]
             since += (f'<div class="gline"><span>Value update {esc(mv[2])}</span><b class="{"up" if dv >= 0 else "down"}">'
                       f'{"+" if dv >= 0 else "−"}{inr(abs(dv))} ({"+" if dv >= 0 else "−"}{abs(dv / mv[0] * 100):.1f}%)</b></div>')
-        status = "On time" if ok else ("Not reached" if late is None else f"{late} month{'s' if late != 1 else ''} late")
+        status = ("On time" if ok else "On time if invested" if gmix_ok else
+                  ("Not reached" if late is None else f"{late} month{'s' if late != 1 else ''} late"))
         note = f'<div class="cap" style="color:#1F8A5B"><b>✓ {inr(monthly)} put aside for {TODAY.strftime("%b")}</b></div></div></div>' if done else f'<div class="cap">After today\'s {inr(monthly)}: <b style="color:#111114">{pct_after:.0f}%</b></div></div></div>'
         cards.append((
             f'<div class="card gcard"><div class="row"><b style="font-size:16px">{esc(g["goal_name"] or "Your goal")}</b>'
-            f'<span class="pill {"ok" if ok else "warn"}">{status}</span></div>'
+            f'<span class="pill {"ok" if (ok or gmix_ok) else "warn"}">{status}</span></div>'
             f'<div class="gtop">{ring(pct / 100, "#14213D", 84, 9, f"{pct:.0f}%", "saved")}'
             f'<div style="flex:1;min-width:0"><div class="num" style="font-size:24px">{short_inr(saved)} <span class="cap">of {short_inr(cost)}</span></div>'
             f'<div class="split" style="margin:8px 0 4px;width:100%"><span style="width:{max(pct, 1):.0f}%;background:#14213D"></span>'
@@ -1718,11 +1932,12 @@ if S.step == 0:
             f'<span style="width:{max(100 - pct_after, 0):.0f}%;background:#E8E7E3"></span></div>'
             f'{note}'
             f'{spark}'
-            f'<div class="gline" style="margin-top:8px"><span>At this pace</span><b>{pace_d}</b></div>'
+            f'<div class="gline" style="margin-top:8px"><span>No growth</span><b style="white-space:nowrap">{pace_d}</b></div>'
+            f'<div class="gline"><span>With {gmix} ({mix_rate(gmix) * 100:.1f}%)</span><b class="{"up" if gmix_ok else "down"}" style="white-space:nowrap">{gmix_d}</b></div>'
             f'<div class="gline"><span>To be on time</span><b>{inr(need)}/month</b></div>{since}</div>'
             , gi_, done, monthly))
     st.markdown(f'<div class="row" style="margin:10px 0 4px;align-items:flex-end;flex-wrap:wrap;gap:4px 16px"><div><div class="k">Salary day · your goals</div>'
-                f'<div class="cap">How close each goal is, and what this month\'s amount does. Rules only, no growth assumed.</div></div>'
+                f'<div class="cap">How close each goal is, and what this month\'s amount does: the date with no growth, and with the mix it is invested in.</div></div>'
                 + (f'<span class="cap">{len(cards) - behind_n} of {len(cards)} on time · {inr(total_goal_monthly)}/month in all</span></div>'
                    if cards else '</div>'),
                 unsafe_allow_html=True)
@@ -1735,13 +1950,13 @@ if S.step == 0:
                 h_, i_, done_, m_ = html
                 c.markdown(h_, unsafe_allow_html=True)
                 pa, pb = c.columns(2, gap="small")
-                with pa.popover("Add a lump sum", width="stretch"):
+                with pa.popover("Lump sum", width="stretch"):
                     st.caption("A bonus, a gift, a matured FD: add any amount to this goal, any day.")
                     S[f"lump{i_}"] = S.get(f"lump{i_}", 0)
                     money("Amount (₹)", f"lump{i_}", 500000, 1000, ratio=(1.6, 1))
                     st.button("Add to this goal", key=f"lumpgo{i_}", type="primary", width="stretch",
                               on_click=mark_paid, args=(i_, free, buffer_months, net_worth, False, "lump"))
-                with pb.popover("Update today's value", width="stretch"):
+                with pb.popover("Update value", width="stretch"):
                     st.caption("Invested this goal's money in a fund, RD or FD? Check your app and type what it is worth today. "
                                "White re-plans from it. Nothing is linked.")
                     cur_ = int(S.goals[i_]["goal_saved"] or 0)
@@ -2029,8 +2244,8 @@ elif S.step == 3:
         s = stats[n]
         sel = n == choice
         with col:
-            fit_txt = {"ok": ("ok", "Fits your timeline"), "risky": ("warn", "Risky for this timeline"),
-                       "no": ("warn", "Not for a short goal")}[s["fit"]]
+            fit_txt = {"ok": ("ok", "Risk suits your timeline"), "risky": ("warn", "Too risky for this timeline"),
+                       "no": ("warn", "Too risky for a short goal")}[s["fit"]]
             st.markdown(
                 f'<div class="opt{" sel" if sel else ""}" style="border-top-color:{MIX_COLOR[n]}">'
                 f'<div class="name"><i style="background:{MIX_COLOR[n]}"></i>{n}'
