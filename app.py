@@ -21,6 +21,7 @@ import math
 import altair as alt
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitInvalidLayoutContextError
 
 st.set_page_config(page_title="White · Save now, spend later", page_icon="○", layout="wide",
                    initial_sidebar_state="collapsed")
@@ -298,7 +299,7 @@ div[data-testid="stCaptionContainer"] p { color: var(--ink-3) !important; }
 .st-key-assistant button { background: var(--accent) !important; color: #fff !important; border: 0 !important; border-radius: 999px !important;
   padding: 10px 18px !important; box-shadow: 0 10px 28px -10px rgba(20,33,61,.6) !important; }
 .st-key-assistant button p, .st-key-assistant button span { color: #fff !important; font-weight: 700 !important; }
-[data-testid="stPopoverBody"]:has(form[class*="assist_form"]), [data-testid="stPopoverBody"]:has(.bub) { width: min(430px, 92vw) !important; max-height: 70vh; overflow-y: auto; }
+[data-testid="stPopoverBody"]:has(form[class*="assist_form"]), [data-testid="stPopoverBody"]:has(.bub), [data-testid="stPopoverBody"]:has([data-testid="stChatInput"]) { width: min(430px, 92vw) !important; max-height: 80vh; overflow-y: auto; }
 [data-testid="stPopoverBody"] button[data-testid^="stBaseButton-tertiary"] { justify-content: flex-start !important; text-align: left !important;
   border: 1px solid var(--line-2) !important; border-radius: 999px !important; padding: 6px 14px !important; margin: 2px 0 !important; background: #fff !important; }
 [data-testid="stPopoverBody"] button[data-testid^="stBaseButton-tertiary"]:hover { background: var(--accent-soft) !important; }
@@ -307,6 +308,11 @@ div[data-testid="stCaptionContainer"] p { color: var(--ink-3) !important; }
 .bub.q { background: var(--accent); color: #fff; margin-left: 40px; }
 .bub.a { background: var(--accent-soft); color: var(--ink); margin-right: 20px; }
 .bub .src { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+.bub.think { display:flex; align-items:center; gap:8px; }
+[data-testid="stPopoverBody"] button:disabled { opacity:.45 !important; cursor:not-allowed !important; }
+.dots i { display:inline-block; width:6px; height:6px; border-radius:50%; background: var(--ink-3); margin-right:3px; animation: blink 1.2s infinite both; }
+.dots i:nth-child(2) { animation-delay:.2s; } .dots i:nth-child(3) { animation-delay:.4s; }
+@keyframes blink { 0%, 80%, 100% { opacity:.25; } 40% { opacity:1; } }
 .st-key-tune { background:#fff; border:1px solid var(--line); border-radius: 18px; padding: 18px 20px 14px; margin: 18px 0 6px; }
 .tune-out { display:flex; gap:12px; align-items:center; flex-wrap:wrap; font-size:15px; padding-top: 8px; border-top: 1px solid var(--line); margin-top: 4px; }
 .kv2 { padding: 8px 0; border-top: 1px solid var(--line); font-size: 14.5px; }
@@ -986,7 +992,7 @@ def get_secret(name, default=None):
         return default
 
 
-APP_BUILD = "14 Nov · build 24"
+APP_BUILD = "14 Nov · build 27"
 FALLBACK_MODELS = ("gemini-flash-latest", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 
 
@@ -1002,7 +1008,8 @@ def _model_unavailable(e):
 def _client(api_key):
     """One Gemini client per key, reused across calls (saves a connection set-up each time)."""
     from google import genai
-    return genai.Client(api_key=api_key)
+    from google.genai import types
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=25_000))   # 25 s, then give up
 
 
 _THINK_OK = {}      # model -> index of the thinking setting that model accepted
@@ -1173,6 +1180,7 @@ def typewriter(render, text, step=3, pause=0.03):
     ph.markdown(render(text, True), unsafe_allow_html=True)
 
 
+@st.fragment
 def explain(task, facts, fallback_text, title):
     """AI explanation card (gold rule). Uses a rule-based sentence if AI is off, has no key, or fails."""
     facts_json = json.dumps(facts, ensure_ascii=False, indent=1)
@@ -1323,54 +1331,112 @@ def rule_answer(q, ctx):
             "Ask about a purchase with an amount, a late salary, or whether you're behind.")
 
 
+ASK_STALE_S = 60     # a question still unanswered after this long gets the calculated answer instead
+
+
+def _assist_msgs():
+    """Chat history as dicts; older sessions stored (question, answer, source) tuples."""
+    S.assist = [m if isinstance(m, dict) else {"q": m[0], "a": m[1], "src": m[2], "t": 0} for m in (S.get("assist") or [])]
+    return S.assist
+
+
+def _assist_busy():
+    return any(m["a"] is None for m in _assist_msgs())
+
+
+def _assist_queue(q):
+    """Put a question in the chat straight away. Off-topic ones are answered here; the rest wait for White."""
+    q = (q or "").strip()[:ASK_MAX_CHARS]
+    if not q or _assist_busy():                               # empty, or a reply is still coming: ignore
+        return
+    if not on_topic(q):                                       # no Gemini call for '1+2' or a poem
+        _assist_msgs().append({"q": q, "src": "White", "t": time.time(),
+                               "a": "I can only help with your money plan: what is free this month, your goals, the mixes, "
+                                    "or what a purchase does to your goal. Try: Can I afford a ₹25,000 trip?"})
+        return
+    _assist_msgs().append({"q": q, "a": None, "src": None, "t": time.time()})
+
+
+def _assist_from_input():
+    _assist_queue(S.get("assist_in"))
+
+
+def _bubble_a(text, src, thinking=False):
+    if thinking:
+        return ('<div class="bub a think"><span class="dots"><i></i><i></i><i></i></span> '
+                '<span style="color:var(--ink-3)">White is thinking…</span></div>')
+    return f'<div class="bub a">{esc(text)}' + (f'<div class="src">{esc(src)}</div>' if src else '') + '</div>'
+
+
+def _assist_answer(m, ctx, slot):
+    """Answer one waiting question, streaming Gemini's words into the chat. Never raises."""
+    base = rule_answer(m["q"], ctx)
+    key = get_secret("GEMINI_API_KEY")
+    if time.time() - (m.get("t") or 0) > ASK_STALE_S:         # left waiting too long (e.g. the page was busy)
+        m["a"], m["src"] = base, "Calculated from your numbers"
+        return
+    if not (S.use_ai and key):
+        m["a"], m["src"] = base, "Calculated from your numbers"
+        return
+    if not ai_budget_ok():
+        m["a"], m["src"] = base, "Calculated from your numbers · AI limit reached for today"
+        return
+    facts = json.dumps({**{k: v for k, v in ctx.items() if k not in ("goal", "mix")},
+                        "goal": ctx["goal"], "mix": ctx["mix"], "calculated_answer": base}, ensure_ascii=False, default=str)
+    cache = S.setdefault("assist_cache", {})
+    ck = hashlib.md5((m["q"].lower() + facts).encode()).hexdigest()
+    if ck in cache:                                           # same question, same numbers: no new call
+        m["a"], m["src"] = cache[ck], "Gemini, from your numbers"
+        return
+    ai_count()
+    out = ""
+    try:
+        for piece in _run(key, get_secret("GEMINI_MODEL", "gemini-flash-latest"),
+                          f"QUESTION: {m['q']}\n\nFACTS (calculated by the app):\n{facts}", CHAT_PROMPT, stream=True):
+            out += piece
+            slot.markdown(f'<div class="bub a">{esc(out)}▍</div>', unsafe_allow_html=True)
+        out = out.strip()
+    except Exception:
+        out = ""
+    if out:
+        cache[ck] = out
+        m["a"], m["src"] = out, "Gemini, from your numbers"
+    else:
+        m["a"], m["src"] = base, "Calculated from your numbers · AI didn't answer"
+
+
+@st.fragment
 def assistant(ctx, suggestions):
-    """Ask White: a chat pinned to the corner of every screen, answering from this person's numbers."""
-    def _ask(q):
-        key = get_secret("GEMINI_API_KEY")
-        q = q[:ASK_MAX_CHARS]
-        if not on_topic(q):                                    # answered here, no Gemini call
-            S.assist.append((q, "I can only help with your money plan: what is free this month, your goals, the mixes, "
-                                "or what a purchase does to your goal. Try: Can I afford a ₹25,000 trip?", "White"))
-            S.assist_new = True
-            return
-        now_ = time.time()
-        wait_ = S.get("last_ask", 0) + ASK_COOLDOWN_S - now_
-        S["last_ask"] = now_
-        base = rule_answer(q, ctx)
-        if S.use_ai and key and wait_ <= 0 and ai_budget_ok():
-            ai_count()
-            try:
-                facts = json.dumps({**{k: v for k, v in ctx.items() if k not in ("goal", "mix")},
-                                    "goal": ctx["goal"], "mix": ctx["mix"], "calculated_answer": base}, ensure_ascii=False, default=str)
-                a = call_chat(q, facts, key, get_secret("GEMINI_MODEL", "gemini-flash-latest"))
-                S.assist.append((q, a or base, "Gemini, from your numbers"))
-                S.assist_new = True
-                return
-            except Exception:
-                pass
-        S.assist.append((q, base, "Calculated from your numbers"))
-        S.assist_new = True
+    """Ask White: a chat pinned to the corner of every screen. Runs on its own, so the page never freezes."""
+    msgs = _assist_msgs()
+    busy = _assist_busy()
     with st.container(key="assistant"):
         with st.popover("Ask White", icon=":material/auto_awesome:"):
             st.markdown('<b style="font-size:17px">Ask White</b><div class="cap">Answers from your numbers on this screen. '
                         'It never picks a product or tells you what to do.</div>', unsafe_allow_html=True)
-            for i, sq in enumerate(suggestions):
-                st.button(sq, key=f"as{S.step}_{i}", width="stretch", type="tertiary", on_click=_ask, args=(sq,))
-            recent = S.assist[-4:]
-            for n_, (cq, ca, csrc) in enumerate(recent):
-                if n_ == len(recent) - 1 and S.get("assist_new"):
-                    S.assist_new = False
-                    typewriter(lambda part, done, cq=cq, csrc=csrc: f'<div class="bub q">{esc(cq)}</div><div class="bub a">{esc(part)}'
-                               + ("" if done else "▍") + (f'<div class="src">{csrc}</div>' if done else '') + '</div>', ca)
+            if not msgs:                                       # ideas to start with; hidden once the chat begins
+                for i, sq in enumerate(suggestions):
+                    st.button(sq, key=f"as{S.step}_{i}", width="stretch", type="tertiary", disabled=busy,
+                              on_click=_assist_queue, args=(sq,))
+            elif len(msgs) > 2:
+                st.markdown(f'<div class="cap" style="text-align:center">{len(msgs) - 2} earlier '
+                            f'question{"s" if len(msgs) - 2 != 1 else ""} not shown</div>', unsafe_allow_html=True)
+            slot, pending = None, None
+            for m in msgs[-2:]:                               # the last two, so the input stays in view
+                st.markdown(f'<div class="bub q">{esc(m["q"])}</div>', unsafe_allow_html=True)
+                if m["a"] is None:
+                    slot, pending = st.empty(), m
+                    slot.markdown(_bubble_a("", None, thinking=True), unsafe_allow_html=True)
                 else:
-                    st.markdown(f'<div class="bub q">{esc(cq)}</div><div class="bub a">{esc(ca)}<div class="src">{csrc}</div></div>',
-                                unsafe_allow_html=True)
-            with st.form(f"assist_form{S.step}", clear_on_submit=True, border=False):
-                fa, fb = st.columns([4, 1], vertical_alignment="bottom")
-                q_ = fa.text_input("Ask", placeholder="e.g. Can I afford a ₹25,000 trip?", label_visibility="collapsed", max_chars=ASK_MAX_CHARS)
-                if fb.form_submit_button("Ask", type="primary") and q_.strip():
-                    _ask(q_.strip())
-                    st.rerun()
+                    st.markdown(_bubble_a(m["a"], m["src"]), unsafe_allow_html=True)
+            st.chat_input("Wait for White's answer…" if busy else "e.g. Can I afford a ₹25,000 trip?",
+                          key="assist_in", max_chars=ASK_MAX_CHARS, disabled=busy, on_submit=_assist_from_input)
+            if pending is not None:
+                _assist_answer(pending, ctx, slot)            # input stays locked until this returns
+                try:
+                    st.rerun(scope="fragment")                # show the answer and unlock the input
+                except StreamlitInvalidLayoutContextError:    # we got here in a full page run (e.g. after a click
+                    st.rerun()                                #   elsewhere mid-answer): refresh the page instead
 
 
 # ═════════════════════════════════════════════════════════════
@@ -1820,14 +1886,33 @@ if S.step == 0:
                 f'<span>Target <b>{fmt_month(g["goal_date"])}</b></span></div>',
                 "card hero", f"background:linear-gradient(135deg,{c1_} 0%,{c2_} 100%);border-color:{c2_}"))
         if last:
-            rows = "".join(
+            # every goal as it stood at the last check-in, then the months before
+            lg_rows = []
+            for k_, g_ in enumerate(last.get("goals") or []):
+                c_, sv_, mo_ = g_.get("goal_cost") or 0, g_.get("goal_saved") or 0, g_.get("goal_monthly") or 0
+                if c_ <= 0:
+                    continue
+                nm_ = (g_.get("goal_name") or "").strip() or "Goal"
+                try:
+                    gd_ = dt.date.fromisoformat(g_["goal_date"]) if isinstance(g_.get("goal_date"), str) else g_.get("goal_date") or TODAY
+                except ValueError:
+                    gd_ = TODAY
+                mx_ = goal_mix({"goal_date": gd_}, nm_ == (S.goal_name or "").strip())
+                n_ = months_to_goal(sv_, mo_, c_, mix_rate(mx_))
+                ticked_ = (last.get("paid") or {}).get(nm_) == last.get("month")
+                lg_rows.append(f'<div class="hist"><span><b>{esc(nm_)}</b>{" ✓" if ticked_ else ""}</span>'
+                               f'<span><b>{short_inr(sv_)}</b> of {short_inr(c_)}</span>'
+                               f'<span>{mx_} <b>{fmt_month(add_months(TODAY, n_)) if n_ else "—"}</b></span></div>')
+            older = "".join(
                 f'<div class="hist"><span>{esc(h.get("month", ""))}</span><span>free <b>{inr(num(h, "free"))}</b></span>'
-                f'<span>buffer <b>{num(h, "buffer"):.1f} mo</b></span><span>{esc(h.get("goal", ""))} <b>{esc(h.get("expected", "—"))}</b></span></div>'
-                for h in history[-4:][::-1])
+                f'<span>buffer <b>{num(h, "buffer"):.1f} mo</b></span></div>'
+                for h in history[-4:-1][::-1])
             slides.append((f'<div class="row"><span class="k">Your check-ins</span><span class="pill">{len(history)} saved in this browser</span></div>'
-                           f'<div class="num lg" style="margin-top:8px">{esc(last.get("goal", "Goal"))}: {esc(last.get("expected", "—"))}</div>'
-                           f'<div class="cap">expected at your last check-in ({esc(last.get("month", ""))}), saving {inr(num(last, "monthly"))}/month {"at current pace, no growth" if last.get("pace_only") else "in the " + esc(last.get("mix", "")) + " mix"}</div>'
-                           f'<div class="hair"></div>{rows}', "card checkins", ""))
+                           f'<div class="num lg" style="margin-top:8px">Last check-in: {esc(last.get("month", ""))}</div>'
+                           f'<div class="cap">Each goal as you left it: saved so far, and when it lands in its mix. ✓ = put aside that month.</div>'
+                           f'<div class="hair"></div>{"".join(lg_rows) or "<div class=cap>No goals saved yet.</div>"}'
+                           + (f'<div class="cap" style="margin-top:10px">Earlier months</div>{older}' if older else ''),
+                           "card checkins", ""))
         hero_slider(slides)
         if last:
             st.button("Clear history from this browser", on_click=wipe_history, key="wipe", type="tertiary")
@@ -2279,9 +2364,12 @@ elif S.step == 3:
             + (", which is the risk with a short goal." if horizon_band == "short" else ".")
             + f" Your stated comfort is {comfort.lower()}.",
             "COMPARING YOUR OPTIONS")
-    st.markdown('<div class="cap" style="margin-bottom:12px"><b>In a bad year</b>: how much today\'s goal savings could rise or fall in one '
-                'bad year. <b>If markets are weak</b>: the goal date if equity earns only 4% a year. Illustrative, not investment '
-                'advice; no funds or stocks are suggested.</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="cap" style="margin-bottom:12px"><b>In a bad year</b>: what one bad year does to the '
+                f'{inr(S.goal_saved)} already saved, assuming that year debt earns +{WEAK_YEAR[0]:g}%, equity falls '
+                f'{abs(WEAK_YEAR[1]):g}% and gold falls {abs(WEAK_YEAR[2]):g}%. <b>If markets are weak</b>: the goal date if equity '
+                f'and gold earn only 4% a year. <b>Expected</b>: debt {S.r_debt:g}%, equity {S.r_equity:g}%, gold {S.r_gold:g}% a year '
+                '(edit them under Assumptions). Illustrative, not investment advice; no funds or stocks are suggested.</div>',
+                unsafe_allow_html=True)
     nav_buttons(2, 4, f"Plan with {choice}")
 
 
